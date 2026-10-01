@@ -4337,7 +4337,8 @@ body.login-bloqueado::after{
 .btn-sugerir-atividade:disabled,
 .btn-enviar-feedback:disabled,
 .btn-confirmar-salvamento:disabled,
-.btn-entrar-login:disabled{
+.btn-entrar-login:disabled,
+.btn-primeiro-login:disabled{
     cursor:not-allowed;
     opacity:0.75;
 }
@@ -4347,7 +4348,8 @@ body.login-bloqueado::after{
 .btn-sugerir-atividade:disabled:hover,
 .btn-enviar-feedback:disabled:hover,
 .btn-confirmar-salvamento:disabled:hover,
-.btn-entrar-login:disabled:hover{
+.btn-entrar-login:disabled:hover,
+.btn-primeiro-login:disabled:hover{
     transform:none;
 }
 
@@ -4356,6 +4358,7 @@ body.login-bloqueado::after{
 .btn-buscar.salvando i,
 .btn-buscar-login.salvando i,
 .btn-entrar-login.salvando i,
+.btn-primeiro-login.salvando i,
 .btn-sugerir-atividade.salvando i,
 .btn-enviar-feedback.salvando i{
     animation:girar 1s linear infinite;

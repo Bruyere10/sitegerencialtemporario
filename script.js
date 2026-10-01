@@ -1313,6 +1313,14 @@ async function alternarPrimeiroLogin() {
         return;
     }
 
+    const icone = btnPrimeiroLogin.querySelector("i");
+    const texto = btnPrimeiroLogin.querySelector("span");
+    btnPrimeiroLogin.disabled = true;
+    btnPrimeiroLogin.classList.add("salvando");
+    btnPrimeiroLogin.setAttribute("aria-busy", "true");
+    icone.className = "bi bi-gear-wide-connected";
+    texto.textContent = "Enviando código...";
+
     try {
         const resposta = await fetch(SCRIPT_URL, {
             method: "POST",
@@ -1330,6 +1338,12 @@ async function alternarPrimeiroLogin() {
         primeiroLoginCodigoInput.focus();
     } catch (erro) {
         mostrarFeedbackLogin(erro.message);
+    } finally {
+        btnPrimeiroLogin.disabled = false;
+        btnPrimeiroLogin.classList.remove("salvando");
+        btnPrimeiroLogin.removeAttribute("aria-busy");
+        icone.className = "bi bi-key";
+        texto.textContent = "Primeiro acesso";
     }
 }
 
