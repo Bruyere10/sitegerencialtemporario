@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Central | Oficina</title>
+    <link rel="stylesheet" href="dashboard-central.css?v=20260918-2">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+    <main class="dashboard-shell">
+        <header class="dashboard-header">
+            <div class="marca">
+                <img src="logo.png" alt="Stellantis">
+                <div>
+                    <span>Oficina</span>
+                    <strong>Dashboard Central</strong>
+                </div>
+            </div>
+            <div class="cabecalho-acoes">
+                <label class="seletor-setor" for="setor-dashboard">
+                    <span>Setor</span>
+                    <select id="setor-dashboard">
+                        <option value="Transmissoes">Transmissões</option>
+                        <option value="Motores">Motores</option>
+                    </select>
+                </label>
+                <div class="usuario">
+                    <div class="usuario-foto">
+                        <img id="foto-usuario-dashboard" alt="Foto de perfil" hidden>
+                        <i id="icone-usuario-dashboard" class="bi bi-person-check"></i>
+                    </div>
+                    <div>
+                        <span id="usuario-dashboard">Carregando...</span>
+                        <small id="papel-dashboard"></small>
+                    </div>
+                </div>
+                <button id="btn-sair-dashboard" type="button" title="Sair" aria-label="Sair"><i class="bi bi-box-arrow-right"></i></button>
+            </div>
+        </header>
+
+        <section id="dashboard-acesso-negado" class="estado-dashboard" hidden>
+            <i class="bi bi-shield-lock"></i>
+            <h1>Acesso restrito</h1>
+            <p>Este dashboard é destinado a gestores e administradores.</p>
+            <a href="index.html">Voltar ao acesso</a>
+        </section>
+
+        <section id="dashboard-conteudo" class="dashboard-layout" hidden>
+            <nav class="dashboard-nav" aria-label="Navegação do dashboard">
+                <button type="button" class="dashboard-nav-ativo" data-dashboard-view="visao-geral"><i class="bi bi-grid-1x2"></i><span>Visão geral</span></button>
+                <button type="button" data-dashboard-view="equipe"><i class="bi bi-people"></i><span>Equipe</span></button>
+                <button type="button" data-dashboard-view="tfms"><i class="bi bi-clipboard-check"></i><span>TFMs abertos</span></button>
+                <button type="button" data-dashboard-view="consultar"><i class="bi bi-search"></i><span>Consultar TFM</span></button>
+                <button type="button" data-dashboard-view="disponibilidade"><i class="bi bi-calendar2-week"></i><span>Disponibilidade</span></button>
+                <button type="button" data-dashboard-view="divergencias"><i class="bi bi-exclamation-triangle"></i><span>Divergências</span></button>
+                <button type="button" data-dashboard-view="calendario"><i class="bi bi-calendar3"></i><span>Calendário</span></button>
+                <button type="button" data-dashboard-view="atividades"><i class="bi bi-bar-chart"></i><span>Atividades</span></button>
+                <button type="button" data-dashboard-view="tempo-padrao"><i class="bi bi-stopwatch"></i><span>Tempo padrão</span></button>
+                <button type="button" data-dashboard-view="relatorios"><i class="bi bi-file-earmark-bar-graph"></i><span>Relatórios</span></button>
+                <button id="nav-configuracoes" type="button" data-dashboard-view="configuracoes" hidden><i class="bi bi-sliders"></i><span>Configurações</span></button>
+            </nav>
+
+            <div class="dashboard-main">
+                <div class="titulo-pagina">
+                    <div>
+                        <span id="setor-legenda">Visão consolidada</span>
+                        <h1 id="titulo-setor">Transmissões</h1>
+                    </div>
+                    <button id="btn-atualizar-dashboard" type="button"><i class="bi bi-arrow-clockwise"></i><span>Atualizar</span></button>
+                </div>
+                <p id="dashboard-status" class="status-dashboard" role="status">Carregando dados...</p>
+
+                <section data-dashboard-content="visao-geral">
+                    <section class="painel-operacional" aria-label="Indicadores do setor">
+                        <div class="filtros-visao-geral">
+                            <label for="filtro-nome-visao-geral">Nome<select id="filtro-nome-visao-geral"><option value="">Toda a equipe</option></select></label>
+                            <label for="filtro-mes-visao-geral">Mês<select id="filtro-mes-visao-geral"><option value="">Todos os meses</option></select></label>
+                            <label for="filtro-turno-visao-geral">Turno<select id="filtro-turno-visao-geral"><option value="">Todos os turnos</option></select></label>
+                            <label for="filtro-atividade-visao-geral">Atividade<select id="filtro-atividade-visao-geral"><option value="">Todas as atividades</option></select></label>
+                        </div>
+                        <section class="indicadores" aria-label="Indicadores filtrados">
+                            <article><i class="bi bi-clock-history"></i><span>Horas registradas</span><strong id="total-horas-dashboard">-</strong></article>
+                        <article><i class="bi bi-stopwatch"></i><span>Horas padrão</span><strong id="total-horas-padrao-dashboard">-</strong></article>
+                        <article><i class="bi bi-calendar2-check"></i><span>Horas disponíveis</span><strong id="total-horas-disponiveis-dashboard">-</strong></article>
+                        <article><i class="bi bi-clipboard-check"></i><span>TFMs distintos</span><strong id="total-tfms-dashboard">-</strong></article>
+                        <article><i class="bi bi-people"></i><span>Colaboradores distintos</span><strong id="total-colaboradores-dashboard">-</strong></article>
+                        <article><i class="bi bi-folder2-open"></i><span>TFMs abertos</span><strong id="total-tfms-abertos-dashboard">-</strong></article>
+                        <article><i class="bi bi-arrow-repeat"></i><span>Horas em andamento</span><strong id="total-horas-andamento-dashboard">-</strong></article>
+                        </section>
+                        <section class="medidores-percentuais" aria-label="Indicadores percentuais">
+                            <article><div class="medidor" id="medidor-tempo-padrao-dashboard"><span class="valor-medidor"><strong id="percentual-tempo-padrao-dashboard">-</strong><span>%</span></span></div><div><span>Eficiência de tempo padrão</span><strong>Horas padrão / Horas totais</strong></div></article>
+                            <article><div class="medidor" id="medidor-disponibilidade-dashboard"><span class="valor-medidor"><strong id="percentual-disponibilidade-dashboard">-</strong><span>%</span></span></div><div><span>Aproveitamento da disponibilidade</span><strong>Horas registradas / Horas disponíveis</strong></div></article>
+                        </section>
+                    </section>
+                    <section class="ranking"><div class="secao-cabecalho"><span>Distribuição</span><h2>Atividades com mais horas</h2></div><div id="ranking-atividades" class="lista-ranking"></div></section>
+                </section>
+
+                <section data-dashboard-content="equipe" hidden>
+                    <div class="secao-cabecalho"><span>Produtividade</span><h2>Equipe do setor</h2></div>
+                    <div class="filtros-equipe-dashboard">
+                        <label class="filtro-colaborador" for="filtro-equipe-dashboard">Colaborador<select id="filtro-equipe-dashboard"><option value="">Visão de toda a equipe</option></select></label>
+                        <label class="filtro-colaborador" for="ordenar-equipe-dashboard">Ordenar por<select id="ordenar-equipe-dashboard"><option value="horas">Mais horas</option><option value="tfms">Mais TFMs</option><option value="nome">Ordem alfabética</option></select></label>
+                        <label class="filtro-data-equipe" for="filtro-inicio-equipe-dashboard">Data inicial<input id="filtro-inicio-equipe-dashboard" type="date"></label>
+                        <label class="filtro-data-equipe" for="filtro-fim-equipe-dashboard">Data final<input id="filtro-fim-equipe-dashboard" type="date"></label>
+                    </div>
+                    <div id="resumo-colaborador-dashboard" class="resumo-colaborador-dashboard"></div>
+                    <section id="calendario-colaborador-dashboard" class="calendario-colaborador-dashboard" hidden></section>
+                    <div id="tabela-equipe" class="tabela-dashboard"></div>
+                    <div id="total-equipe-dashboard" class="total-equipe-dashboard"></div>
+                </section>
+                <section data-dashboard-content="tfms" hidden><div class="secao-cabecalho"><span>Acompanhamento</span><h2>TFMs em andamento</h2></div><div id="tabela-tfms" class="tabela-dashboard"></div></section>
+                <section data-dashboard-content="consultar" hidden>
+                    <div class="secao-cabecalho"><span>Consulta</span><h2>Consultar TFM</h2></div>
+                    <form id="form-consultar-tfm-dashboard" class="consulta-tfm-dashboard">
+                        <label for="consulta-tfm-dashboard">Número do TFM</label>
+                        <div>
+                            <input id="consulta-tfm-dashboard" type="text" inputmode="numeric" autocomplete="off" placeholder="Digite ou cole TFM(s) com 6 números">
+                            <button type="submit"><i class="bi bi-search"></i><span>Consultar</span></button>
+                        </div>
+                    </form>
+                    <div id="resultado-consulta-tfm-dashboard" class="resultado-consulta-dashboard" aria-live="polite"></div>
+                </section>
+                <section data-dashboard-content="disponibilidade" hidden>
+                    <div class="secao-cabecalho"><span>Capacidade</span><h2>Disponibilidade</h2></div>
+                    <div class="filtros-disponibilidade-dashboard">
+                        <label class="filtro-colaborador" for="filtro-disponibilidade-dashboard">Colaborador<select id="filtro-disponibilidade-dashboard"><option value="">Toda a equipe</option></select></label>
+                        <label class="filtro-data-disponibilidade" for="filtro-data-disponibilidade-dashboard">Data<input id="filtro-data-disponibilidade-dashboard" type="date"></label>
+                    </div>
+                    <div id="resumo-disponibilidade-dashboard" class="resumo-colaborador-dashboard"></div>
+                    <div id="tabela-disponibilidade" class="tabela-dashboard"></div>
+                </section>
+                <section data-dashboard-content="divergencias" hidden>
+                    <div class="secao-cabecalho"><span>Conferência diária</span><h2>Divergências de disponibilidade</h2></div>
+                    <label class="filtro-colaborador" for="filtro-divergencias-dashboard">Colaborador<select id="filtro-divergencias-dashboard"><option value="">Selecione um colaborador</option></select></label>
+                    <div id="resumo-divergencias-dashboard" class="resumo-colaborador-dashboard"></div>
+                    <div id="tabela-divergencias" class="tabela-dashboard" aria-live="polite"></div>
+                </section>
+                <section data-dashboard-content="calendario" hidden>
+                    <div class="secao-cabecalho"><span>Acompanhamento diário</span><h2>Calendário da equipe</h2></div>
+                    <input id="filtro-inicio-calendario-dashboard" type="hidden">
+                    <input id="filtro-fim-calendario-dashboard" type="hidden">
+                    <div class="filtros-calendario-dashboard">
+                        <div class="navegacao-mes-calendario" aria-label="Navegação mensal">
+                            <button id="btn-mes-anterior-calendario" type="button" title="Mês anterior" aria-label="Mês anterior"><i class="bi bi-chevron-left"></i></button>
+                            <div><span id="periodo-calendario-dashboard">-</span><strong id="mes-calendario-dashboard">-</strong></div>
+                            <button id="btn-proximo-mes-calendario" type="button" title="Próximo mês" aria-label="Próximo mês"><i class="bi bi-chevron-right"></i></button>
+                        </div>
+                        <label for="filtro-calendario-dashboard">Visualização<select id="filtro-calendario-dashboard"><option value="">Equipe unificada</option></select></label>
+                    </div>
+                    <div id="resumo-calendario-dashboard" class="resumo-colaborador-dashboard"></div>
+                    <div id="calendario-geral-dashboard" class="calendario-grade" aria-live="polite"></div>
+                </section>
+                <section data-dashboard-content="atividades" hidden><div class="secao-cabecalho"><span>Distribuição</span><h2>Atividades mais executadas</h2></div><div id="ranking-atividades-completo" class="lista-ranking"></div></section>
+                <section data-dashboard-content="tempo-padrao" hidden><div class="secao-cabecalho"><span>Referência</span><h2>Tempos padrão por atividade</h2></div><div id="tabela-tempos-padrao-dashboard" class="tabela-dashboard"></div></section>
+                <section data-dashboard-content="relatorios" hidden><div class="secao-cabecalho"><span>Resumo do setor</span><h2>Relatórios</h2></div><div id="relatorio-resumo" class="relatorio-resumo"></div></section>
+                <section data-dashboard-content="configuracoes" hidden>
+                    <div class="secao-cabecalho"><span>Conta</span><h2>Meu perfil</h2></div>
+                    <div class="perfil-dashboard">
+                        <div class="perfil-foto-editor">
+                            <div class="perfil-foto-grande">
+                                <img id="foto-perfil-dashboard" alt="Foto de perfil" hidden>
+                                <i id="icone-perfil-dashboard" class="bi bi-person"></i>
+                            </div>
+                            <label class="btn-foto-perfil" for="input-foto-perfil-dashboard"><i class="bi bi-camera"></i><span>Adicionar foto</span></label>
+                            <input id="input-foto-perfil-dashboard" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+                            <button id="btn-remover-foto-perfil" type="button" hidden><i class="bi bi-trash3"></i><span>Remover foto</span></button>
+                        </div>
+                        <dl class="perfil-dados">
+                            <div><dt>Nome</dt><dd id="perfil-nome-dashboard">-</dd></div>
+                            <div><dt>Matrícula</dt><dd id="perfil-matricula-dashboard">-</dd></div>
+                            <div><dt>Cargo</dt><dd id="perfil-cargo-dashboard">-</dd></div>
+                        </dl>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </main>
+    <section id="bloqueio-carregamento-dashboard" class="bloqueio-carregamento-dashboard" role="status" aria-live="assertive" aria-label="Carregando dados do setor" hidden>
+        <div>
+            <i class="bi bi-gear-fill" aria-hidden="true"></i>
+            <strong>Carregando dados do setor</strong>
+            <span>Aguarde um momento.</span>
+        </div>
+    </section>
+    <button id="btn-central-ajuda" class="btn-central-ajuda" type="button" aria-label="Abrir central de ajuda" aria-expanded="false" aria-controls="central-ajuda" title="Central de ajuda">
+        <i class="bi bi-robot"></i>
+        <span>Ajuda</span>
+    </button>
+    <section id="central-ajuda" class="central-ajuda" aria-label="Central de ajuda" hidden>
+        <header class="central-ajuda-topo">
+            <div>
+                <i class="bi bi-robot"></i>
+                <span>Central de ajuda</span>
+                <small>Assistente operacional</small>
+            </div>
+            <button id="btn-fechar-central-ajuda" type="button" aria-label="Fechar central de ajuda" title="Fechar"><i class="bi bi-x-lg"></i></button>
+        </header>
+        <div id="central-ajuda-conversa" class="central-ajuda-conversa" aria-live="polite">
+            <p class="mensagem-ajuda mensagem-ajuda-bot">Olá. Escolha uma pergunta para consultar as orientações do Dashboard Central.</p>
+        </div>
+        <div class="central-ajuda-perguntas" aria-label="Perguntas disponíveis">
+            <button type="button" data-ajuda-pergunta="divergencias">Como consultar divergências?</button>
+            <button type="button" data-ajuda-pergunta="calendario">Como filtrar o calendário?</button>
+            <button type="button" data-ajuda-pergunta="atualizar">Como atualizar os dados?</button>
+            <button type="button" data-ajuda-pergunta="perfil">Como alterar minha foto?</button>
+            <button type="button" data-ajuda-pergunta="dados">Por que não aparecem dados?</button>
+        </div>
+    </section>
+    <section id="painel-tfms-dia" class="painel-suspenso" role="dialog" aria-modal="true" aria-labelledby="titulo-painel-tfms-dia" hidden>
+        <div class="painel-suspenso-conteudo">
+            <header>
+                <div><span>Histórico do colaborador</span><h2 id="titulo-painel-tfms-dia">TFMs do dia</h2></div>
+                <button id="btn-fechar-painel-tfms-dia" type="button" title="Fechar" aria-label="Fechar"><i class="bi bi-x-lg"></i></button>
+            </header>
+            <div id="conteudo-painel-tfms-dia"></div>
+        </div>
+    </section>
+    <script src="dashboard-central.js?v=20260918-10"></script>
+</body>
+</html>

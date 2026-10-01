@@ -1,0 +1,2748 @@
+const CONFIG = {
+  planilhaId: "1AsYWkC4hrgCalOKSSEdQ2Mx6YCJ3MGiOaiec_DQXJNY",
+  planilhasOrigem: {
+    Motores: "1B_ER15kHjnoiRcVNeVL6UVsbD-6tttgiKr4Ph22SHeo",
+    Transmissoes: "1i76sjZAn0mi6KikkfAsFJtQYv7mnuiq0ESM3a-QRELw"
+  },
+  abasSincronizadas: {
+    Motores: [
+      { origem: ["Página1"], destino: "Banco Motores" },
+      { origem: ["TFMs Abertos"], destino: "TFMs Abertos Motores" },
+      { origem: ["Resumo_BI", "Resumo BI"], destino: "Resumo_BI Motores" },
+      { origem: ["Códigos"], destino: "Códigos Motores" },
+      { origem: ["Disponibilidade Diária", "Disponibilidade Diaria", "Disponibilidade"], destino: "Disponibilidade Diária Motores" }
+    ],
+    Transmissoes: [
+      { origem: ["Página1"], destino: "Banco Transmissões" },
+      { origem: ["TFMs Abertos"], destino: "TFMs Abertos Transmissões" },
+      { origem: ["Resumo_BI", "Resumo BI"], destino: "Resumo_BI Transmissões" },
+      { origem: ["Códigos"], destino: "Códigos Transmissões" },
+      { origem: ["Disponibilidade Diária", "Disponibilidade Diaria", "Disponibilidade"], destino: "Disponibilidade Diária Transmissões" }
+    ]
+  },
+  nomeAbaAtualizacoes: "ATUALIZACOES",
+  nomeAba: "Página1",
+  nomeAbaTfmsAbertos: "TFMs Abertos",
+  nomeAbaDadosComplementares: "Dados Complementares",
+  nomeAbaCodigos: "Códigos",
+  nomeAbaDisponibilidade: "Disponibilidade Diária",
+  nomeAbaAcesso: "ACESSO",
+  nomesExcluidosDashboard: [
+    "Renis Mendes Goulart",
+    "Leonel Barros Pereira Da Silva",
+    "Anderson Parreiras"
+  ],
+  emailAnexosDestino: "SG49872@stellantis.com",
+  assuntoEmailAnexos: "ANEXO_APONTAMENTO_TFM_TRANSMISSOES",
+  linkPastaAnexos: "https://shiftup-my.sharepoint.com/:f:/g/personal/sg49872_stellantis_com/IgCdEhIERGwMT6hFPi3_c0G9ASZVimclp7CDlt8rau5q4Rg"
+};
+
+const CABECALHOS = [
+  "DATA",
+  "NOME",
+  "MATRÍCULA",
+  "TURNO",
+  "TFM",
+  "PROJETO",
+  "ATIVIDADE",
+  "HORAS",
+  "OBSERVAÇÃO",
+  "COLABORADORES ADICIONAIS",
+  "HORAS COLABORADORES",
+  "NOME DO PDF",
+  "LINK DO PDF"
+];
+
+const CABECALHOS_DADOS_COMPLEMENTARES = [
+  "SUGESTÃO DE ATIVIDADE",
+  "OBSERVAÇÃO ATIVIDADE",
+  "CADASTRO NOME",
+  "CADASTRO MATRÍCULA",
+  "TIPO DO FEEDBACK",
+  "NOME DO COLABORADOR",
+  "MATRÍCULA DO COLABORADOR"
+];
+
+const CABECALHOS_TFMS_ABERTOS = [
+  "STATUS",
+  "TFM",
+  "DATA INICIAL",
+  "DATA TRABALHADA",
+  "DATA FINAL",
+  "NOME DO HOST",
+  "MATRÍCULA DO HOST",
+  "NOME DO COLABORADOR",
+  "MATRÍCULA DO COLABORADOR",
+  "TURNO",
+  "PROJETO",
+  "ATIVIDADE",
+  "HORAS",
+  "OBSERVAÇÃO",
+  "REGISTRADO EM",
+  "NOME DO PDF",
+  "LINK DO PDF",
+  "ATIVIDADE ADICIONAL",
+  "HORAS ADICIONAIS",
+  "NOMES AUTORIZADOS",
+  "MATRÍCULAS AUTORIZADAS"
+];
+
+const CABECALHOS_DISPONIBILIDADE = [
+  "DATA",
+  "NOME",
+  "MATRÍCULA",
+  "HORAS DISPONÍVEIS",
+  "SITUAÇÃO",
+  "ATUALIZADO EM"
+];
+
+function autorizarEnvioEmail() {
+  MailApp.sendEmail({
+    to: CONFIG.emailAnexosDestino,
+    subject: `${CONFIG.assuntoEmailAnexos} - TESTE`,
+    body: "Teste de autorizacao do envio de anexos pelo Apps Script."
+  });
+}
+
+function localizarAbaOrigem(planilha, nomes) {
+  const aba = nomes.map((nome) => planilha.getSheetByName(nome)).find(Boolean)
+    || planilha.getSheets().find((candidata) => nomes.some((nome) => normalizarTextoAcesso(candidata.getName()) === normalizarTextoAcesso(nome)));
+
+  if (!aba) {
+    throw new Error(`Aba de origem nao encontrada: ${nomes.join(" ou ")}.`);
+  }
+
+  return aba;
+}
+
+function obterOuCriarAba(planilha, nome) {
+  return planilha.getSheetByName(nome) || planilha.insertSheet(nome);
+}
+
+function converterDataResumoBi(valor) {
+  if (Object.prototype.toString.call(valor) === "[object Date]" && !Number.isNaN(valor.getTime())) return valor;
+  if (typeof valor === "number" && Number.isFinite(valor) && valor > 0) {
+    return new Date(Date.UTC(1899, 11, 30) + valor * 86400000);
+  }
+
+  const texto = String(valor == null ? "" : valor).trim();
+  const dataBrasileira = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const dataIso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!dataBrasileira && !dataIso) return valor;
+  const ano = Number(dataBrasileira ? dataBrasileira[3] : dataIso[1]);
+  const mes = Number(dataBrasileira ? dataBrasileira[2] : dataIso[2]);
+  const dia = Number(dataBrasileira ? dataBrasileira[1] : dataIso[3]);
+  const dataConvertida = new Date(Date.UTC(ano, mes - 1, dia));
+  return Number.isNaN(dataConvertida.getTime()) ? valor : dataConvertida;
+}
+
+function copiarAbaParaCentral(abaOrigem, abaDestino) {
+  const ultimaLinha = abaOrigem.getLastRow();
+  const ultimaColuna = abaOrigem.getLastColumn();
+  abaDestino.clear();
+
+  if (!ultimaLinha || !ultimaColuna) {
+    return 0;
+  }
+
+  const origem = abaOrigem.getRange(1, 1, ultimaLinha, ultimaColuna);
+  const destino = abaDestino.getRange(1, 1, ultimaLinha, ultimaColuna);
+  const valores = origem.getValues();
+  const ehResumoBi = normalizarTextoAcesso(abaDestino.getName()).startsWith("resumo_bi");
+  const colunasDeData = ehResumoBi
+    ? valores[0].map((cabecalho, indice) => normalizarTextoAcesso(cabecalho).includes("data") ? indice : -1).filter((indice) => indice >= 0)
+    : [];
+  const valoresDestino = colunasDeData.length
+    ? valores.map((linha, indiceLinha) => indiceLinha === 0 ? linha : linha.map((valor, indiceColuna) => (
+      colunasDeData.includes(indiceColuna) ? converterDataResumoBi(valor) : valor
+    )))
+    : valores;
+  destino.setValues(valoresDestino);
+  destino.setNumberFormats(origem.getNumberFormats());
+  colunasDeData.forEach((indice) => destino.getRange(2, indice + 1, Math.max(ultimaLinha - 1, 1), 1).setNumberFormat("dd/MM/yyyy"));
+  abaDestino.setFrozenRows(1);
+  return Math.max(0, ultimaLinha - 1);
+}
+
+function registrarAtualizacaoCentral(registros) {
+  const planilhaCentral = obterArquivoPlanilha();
+  const aba = obterOuCriarAba(planilhaCentral, CONFIG.nomeAbaAtualizacoes);
+
+  if (aba.getLastRow() === 0) {
+    aba.appendRow(["SETOR", "ABA", "REGISTROS", "ATUALIZADO EM"]);
+    aba.setFrozenRows(1);
+  }
+
+  if (registros.length) {
+    aba.getRange(aba.getLastRow() + 1, 1, registros.length, 4).setValues(registros.map((registro) => [
+      registro.setor,
+      registro.aba,
+      registro.registros,
+      new Date()
+    ]));
+  }
+}
+
+function sincronizarDadosDashboard() {
+  const bloqueio = LockService.getScriptLock();
+  bloqueio.waitLock(30000);
+
+  try {
+    const planilhaCentral = obterArquivoPlanilha();
+    const registros = [];
+
+    Object.entries(CONFIG.planilhasOrigem).forEach(([setor, idPlanilha]) => {
+      const planilhaOrigem = SpreadsheetApp.openById(idPlanilha);
+      CONFIG.abasSincronizadas[setor].forEach((configuracaoAba) => {
+        const abaOrigem = localizarAbaOrigem(planilhaOrigem, configuracaoAba.origem);
+        const abaDestino = obterOuCriarAba(planilhaCentral, configuracaoAba.destino);
+        const quantidade = copiarAbaParaCentral(abaOrigem, abaDestino);
+        registros.push({ setor, aba: configuracaoAba.destino, registros: quantidade });
+      });
+    });
+
+    registrarAtualizacaoCentral(registros);
+    return { sucesso: true, atualizacoes: registros };
+  } finally {
+    bloqueio.releaseLock();
+  }
+}
+
+function criarGatilhoSincronizacaoHoraria() {
+  ScriptApp.getProjectTriggers()
+    .filter((gatilho) => gatilho.getHandlerFunction() === "sincronizarDadosDashboard")
+    .forEach((gatilho) => ScriptApp.deleteTrigger(gatilho));
+
+  ScriptApp.newTrigger("sincronizarDadosDashboard")
+    .timeBased()
+    .everyHours(1)
+    .create();
+}
+
+function doPost(evento) {
+  try {
+    const dados = JSON.parse(evento.postData.contents || "{}");
+
+    if (dados.acao === "solicitarCodigoPrimeiroLogin") {
+      return responderJson(enviarCodigoPrimeiroLogin(dados));
+    }
+
+    if (dados.acao === "primeiroLogin") {
+      return responderJson(definirSenhaPrimeiroLogin(dados));
+    }
+
+    if (dados.acao === "solicitarCodigoRedefinicaoSenha") {
+      return responderJson(enviarCodigoRedefinicaoSenha(dados));
+    }
+
+    if (dados.acao === "redefinirSenha") {
+      return responderJson(redefinirSenha(dados));
+    }
+
+    if (dados.acao === "login") {
+      return responderJson(autenticarUsuario(dados));
+    }
+
+    if (dados.acao === "sugerirAtividade") {
+      return salvarSugestaoAtividade(dados);
+    }
+
+    if (dados.acao === "enviarFeedback") {
+      return salvarFeedbackColaborador(dados);
+    }
+
+    if (dados.acao === "registrarCadastroPendente") {
+      return salvarCadastroPendente(dados);
+    }
+
+    if (dados.acao === "verificarLimiteHoras") {
+      return verificarLimiteHoras(dados);
+    }
+
+    if (dados.acao === "abrirTfm") {
+      return abrirTfmEmAndamento(dados);
+    }
+
+    if (dados.acao === "adicionarHorasTfmAberto") {
+      return adicionarHorasTfmAberto(dados);
+    }
+
+    if (dados.acao === "editarLancamentosTfmAberto") {
+      return editarLancamentosTfmAberto(dados);
+    }
+
+    if (dados.acao === "excluirLancamentoTfmAberto") {
+      return excluirLancamentoTfmAberto(dados);
+    }
+
+    if (dados.acao === "cancelarTfmAberto") {
+      return cancelarTfmAberto(dados);
+    }
+
+    if (dados.acao === "fecharTfmAberto") {
+      return fecharTfmAberto(dados);
+    }
+
+    const planilha = obterAbaPrincipal();
+
+    if (dados.linhaEditando && Number.isInteger(dados.linhaEditando) && dados.linhaEditando > 1) {
+      validarResponsavelEdicao(planilha, dados);
+    } else if (tfmEstaEmAndamento(dados.tfm)) {
+      throw new Error(`O TFM ${dados.tfm} esta em andamento. Finalize-o pela tela de TFMs em andamento.`);
+    }
+
+    const documentos = enviarDocumentosPorEmail(dados);
+    const nomesDocumentos = documentos.map((documento) => documento.nome).join(" | ");
+    const linksDocumentos = [...new Set(documentos.map((documento) => documento.url).filter(Boolean))].join(" | ");
+    const atividades = Array.isArray(dados.distribuicaoDiaria) && dados.distribuicaoDiaria.length > 0
+      ? dados.distribuicaoDiaria
+      : Array.isArray(dados.atividades) && dados.atividades.length > 0
+        ? dados.atividades
+        : [{ atividade: "", horas: "", observacao: "" }];
+    const colaboradoresAdicionais = normalizarColaboradoresAdicionais(dados.colaboradoresAdicionais);
+    const lancamentoColaboradorInvalido = colaboradoresAdicionais.some((colaborador) => (
+      colaborador.lancamentos.some((lancamento) => (
+        (dados.dataInicioTfm && lancamento.data < dados.dataInicioTfm)
+        || (dados.dataFimTfm && lancamento.data > dados.dataFimTfm)
+      ))
+    ));
+
+    if (lancamentoColaboradorInvalido) {
+      throw new Error("As datas dos colaboradores precisam estar dentro do periodo do TFM.");
+    }
+
+    const cabecalhosPlanilha = planilha.getRange(1, 1, 1, planilha.getLastColumn()).getValues()[0];
+
+    const criarLinha = (atividade, colaborador) => criarLinhaApontamento(cabecalhosPlanilha, {
+        data: colaborador.data || atividade.data || dados.data || "",
+        nome: colaborador.nome || dados.nome || "",
+        matricula: colaborador.matricula || dados.matricula || "",
+        turno: dados.turno || "",
+        tfm: dados.tfm || "",
+        projeto: dados.projeto || "",
+        atividade: atividade.atividade || "",
+        horas: colaborador.horas || atividade.horas || "",
+        observacao: atividade.observacao || "",
+        colaboradoresAdicionais: "",
+        horasColaboradores: "",
+        nomesDocumentos,
+        linksDocumentos
+      });
+    const linhasResponsavel = atividades.map((atividade) => criarLinha(atividade, {}));
+    const linhasColaboradores = colaboradoresAdicionais.flatMap((colaborador) => {
+      const lancamentos = colaborador.lancamentos.length
+        ? colaborador.lancamentos
+        : [{ data: dados.data || "", horas: colaborador.horas }];
+
+      return lancamentos.map((lancamento) => {
+        const atividade = atividades.find((item) => valoresPlanilhaIguais(item.data, lancamento.data)) || atividades[0];
+        return criarLinha(atividade, {
+          nome: colaborador.nome,
+          matricula: colaborador.matricula,
+          data: lancamento.data,
+          horas: lancamento.horas
+        });
+      });
+    });
+    const linhas = [...linhasResponsavel, ...linhasColaboradores];
+
+    // Em edicoes, preserva as linhas existentes e altera somente as celulas modificadas.
+    if (dados.linhaEditando && Number.isInteger(dados.linhaEditando) && dados.linhaEditando > 1) {
+      const colunaTfm = obterIndiceCabecalho(cabecalhosPlanilha, ["TFM", "Numero do TFM", "Número do TFM"]);
+      const tfmEditando = String(dados.tfm || "").trim();
+
+      if (colunaTfm < 0 || !tfmEditando) {
+        throw new Error("Nao foi possivel identificar as linhas do TFM para edicao.");
+      }
+
+      const todosOsDados = planilha.getDataRange().getValues();
+      const linhasExistentes = [];
+
+      for (let indice = 1; indice < todosOsDados.length; indice += 1) {
+        if (String(todosOsDados[indice][colunaTfm] || "").trim() === tfmEditando) {
+          linhasExistentes.push({ numero: indice + 1, valores: todosOsDados[indice] });
+        }
+      }
+
+      if (linhasExistentes.length === 0) {
+        throw new Error("Nenhuma linha existente foi encontrada para este TFM.");
+      }
+
+      const preservarDocumentos = documentos.length === 0;
+      const colunaData = obterIndiceCabecalho(cabecalhosPlanilha, ["Data"]);
+      const colunaMatricula = obterIndiceCabecalho(cabecalhosPlanilha, ["Matricula", "Matrícula"]);
+      const colunaAtividade = obterIndiceCabecalho(cabecalhosPlanilha, ["Atividade", "Atividade Realizada"]);
+      const colunasDocumento = new Set([
+        obterIndiceCabecalho(cabecalhosPlanilha, ["Nome do PDF", "PDF", "Nome Documento", "Nome do Documento"]),
+        obterIndiceCabecalho(cabecalhosPlanilha, ["Link do PDF", "Link PDF", "URL do PDF", "Documento", "Link do Documento"])
+      ].filter((indice) => indice >= 0));
+      const linhasUsadas = new Set();
+      const linhasNovas = [];
+
+      function localizarLinhaExistente(novaLinha, indicePreferencial) {
+        const criterios = [
+          [colunaData, colunaMatricula, colunaAtividade],
+          [colunaMatricula, colunaAtividade],
+          [colunaMatricula]
+        ].filter((colunas) => colunas.every((coluna) => coluna >= 0));
+
+        for (const colunas of criterios) {
+          const indiceEncontrado = linhasExistentes.findIndex((linhaExistente, indiceLinha) => (
+            !linhasUsadas.has(indiceLinha)
+            && colunas.every((coluna) => valoresPlanilhaIguais(linhaExistente.valores[coluna], novaLinha[coluna]))
+          ));
+
+          if (indiceEncontrado >= 0) {
+            return indiceEncontrado;
+          }
+        }
+
+        if (indicePreferencial < linhasExistentes.length && !linhasUsadas.has(indicePreferencial)) {
+          return indicePreferencial;
+        }
+
+        return linhasExistentes.findIndex((linhaExistente, indiceLinha) => !linhasUsadas.has(indiceLinha));
+      }
+
+      linhas.forEach((novaLinha, indiceNovaLinha) => {
+        const indiceLinhaExistente = localizarLinhaExistente(novaLinha, indiceNovaLinha);
+
+        if (indiceLinhaExistente < 0) {
+          if (preservarDocumentos) {
+            colunasDocumento.forEach((indiceColuna) => {
+              novaLinha[indiceColuna] = linhasExistentes[0].valores[indiceColuna];
+            });
+          }
+
+          linhasNovas.push(novaLinha);
+          return;
+        }
+
+        linhasUsadas.add(indiceLinhaExistente);
+        const linhaExistente = linhasExistentes[indiceLinhaExistente];
+
+        novaLinha.forEach((novoValor, indiceColuna) => {
+          if (preservarDocumentos && colunasDocumento.has(indiceColuna)) {
+            return;
+          }
+
+          const valorAtual = linhaExistente.valores[indiceColuna];
+
+          if (!valoresPlanilhaIguais(valorAtual, novoValor)) {
+            planilha.getRange(linhaExistente.numero, indiceColuna + 1).setValue(novoValor);
+          }
+        });
+      });
+
+      linhasExistentes
+        .filter((linhaExistente, indiceLinha) => !linhasUsadas.has(indiceLinha))
+        .map((linhaExistente) => linhaExistente.numero)
+        .sort((numeroA, numeroB) => numeroB - numeroA)
+        .forEach((numeroLinha) => planilha.deleteRow(numeroLinha));
+
+      if (linhasNovas.length) {
+        planilha.getRange(planilha.getLastRow() + 1, 1, linhasNovas.length, cabecalhosPlanilha.length).setValues(linhasNovas);
+      }
+    } else {
+      // Se é um novo registro, adiciona no final
+      planilha.getRange(planilha.getLastRow() + 1, 1, linhas.length, cabecalhosPlanilha.length).setValues(linhas);
+    }
+
+    invalidarCacheDesempenho([dados.matricula, ...colaboradoresAdicionais.map((colaborador) => colaborador.matricula)]);
+
+    if (dados.cadastroPendente) {
+      salvarCadastroPendente(dados);
+    }
+
+    return responderJson({
+      sucesso: true,
+      documentos: documentos.map((documento) => ({
+        nome: documento.nome,
+        url: documento.url,
+        id: documento.id
+      }))
+    });
+  } catch (erro) {
+    return responderJson({
+      sucesso: false,
+      erro: erro.message || "Erro ao salvar apontamento."
+    });
+  }
+}
+
+function validarResponsavelEdicao(planilha, dados) {
+  const cabecalhos = planilha.getRange(1, 1, 1, planilha.getLastColumn()).getValues()[0];
+  const colunaMatricula = obterIndiceCabecalho(cabecalhos, ["Matricula", "Matrícula"]);
+  const colunaTfm = obterIndiceCabecalho(cabecalhos, ["TFM", "Numero do TFM", "Número do TFM"]);
+  const numeroLinha = Number(dados.linhaEditando);
+  const matriculaEditor = String(dados.matriculaUsuarioEditor || "").trim();
+
+  if (colunaMatricula < 0 || colunaTfm < 0 || numeroLinha > planilha.getLastRow()) {
+    throw new Error("Nao foi possivel validar o responsavel por este TFM.");
+  }
+
+  const linhaOriginal = planilha.getRange(numeroLinha, 1, 1, planilha.getLastColumn()).getValues()[0];
+  const matriculaHost = String(linhaOriginal[colunaMatricula] || "").trim();
+  const tfmOriginal = String(linhaOriginal[colunaTfm] || "").trim();
+  const tfmEnviado = String(dados.tfm || "").trim();
+
+  if (!matriculaEditor || matriculaEditor !== matriculaHost || tfmOriginal !== tfmEnviado) {
+    throw new Error("Entre na conta do responsavel por este TFM para edita-lo.");
+  }
+}
+
+function salvarSugestaoAtividade(dados) {
+  try {
+    const aba = obterAbaDadosComplementares();
+
+    aba.getRange(aba.getLastRow() + 1, 1, 1, CABECALHOS_DADOS_COMPLEMENTARES.length).setValues([[
+      dados.atividade || "",
+      dados.observacao || "",
+      "",
+      "",
+      "Sugestão de atividade",
+      dados.nomeColaborador || dados.nome || "",
+      dados.matriculaColaborador || dados.matricula || ""
+    ]]);
+
+    return responderJson({
+      sucesso: true
+    });
+  } catch (erro) {
+    return responderJson({
+      sucesso: false,
+      erro: erro.message || "Erro ao salvar sugestao de atividade."
+    });
+  }
+}
+
+function salvarFeedbackColaborador(dados) {
+  try {
+    const aba = obterAbaDadosComplementares();
+
+    aba.getRange(aba.getLastRow() + 1, 1, 1, CABECALHOS_DADOS_COMPLEMENTARES.length).setValues([[
+      dados.feedback || "",
+      dados.observacao || "",
+      "",
+      "",
+      dados.tipoFeedback || "Sugestão",
+      dados.nomeColaborador || dados.nome || "",
+      dados.matriculaColaborador || dados.matricula || ""
+    ]]);
+
+    return responderJson({
+      sucesso: true
+    });
+  } catch (erro) {
+    return responderJson({
+      sucesso: false,
+      erro: erro.message || "Erro ao salvar feedback."
+    });
+  }
+}
+
+function salvarCadastroPendente(dados) {
+  try {
+    const aba = obterAbaDadosComplementares();
+    const nome = String(dados.nome || "").trim();
+    const matricula = String(dados.matricula || "").trim();
+
+    if (!nome || !matricula) {
+      return responderJson({
+        sucesso: false,
+        erro: "Nome e matricula sao obrigatorios para registrar cadastro pendente."
+      });
+    }
+
+    if (cadastroPendenteJaRegistrado(aba, nome, matricula)) {
+      return responderJson({
+        sucesso: true,
+        duplicado: true
+      });
+    }
+
+    aba.getRange(aba.getLastRow() + 1, 1, 1, CABECALHOS_DADOS_COMPLEMENTARES.length).setValues([[
+      "",
+      "",
+      nome,
+      matricula,
+      "",
+      "",
+      ""
+    ]]);
+
+    return responderJson({
+      sucesso: true
+    });
+  } catch (erro) {
+    return responderJson({
+      sucesso: false,
+      erro: erro.message || "Erro ao salvar cadastro pendente."
+    });
+  }
+}
+
+function cadastroPendenteJaRegistrado(aba, nome, matricula) {
+  const ultimaLinha = aba.getLastRow();
+
+  if (ultimaLinha < 2) {
+    return false;
+  }
+
+  const registros = aba.getRange(2, 3, ultimaLinha - 1, 2).getValues();
+  const nomeNormalizado = nome.toLowerCase();
+
+  return registros.some((registro) => {
+    const nomeRegistrado = String(registro[0] || "").trim().toLowerCase();
+    const matriculaRegistrada = String(registro[1] || "").trim();
+
+    return matriculaRegistrada === matricula || nomeRegistrado === nomeNormalizado;
+  });
+}
+
+function normalizarTextoAcesso(valor) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function obterAbaAcesso() {
+  const aba = obterArquivoPlanilha().getSheetByName(CONFIG.nomeAbaAcesso);
+
+  if (!aba) {
+    throw new Error("A aba ACESSO nao foi encontrada.");
+  }
+
+  return aba;
+}
+
+function obterColunasAcesso(aba) {
+  const cabecalhos = aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0];
+  const colunas = {};
+
+  cabecalhos.forEach((cabecalho, indice) => {
+    colunas[normalizarTextoAcesso(cabecalho)] = indice;
+  });
+
+  ["nome", "matricula", "email corporativo", "senha_hash", "papel", "primeiro_login", "ativo"].forEach((cabecalho) => {
+    if (colunas[cabecalho] === undefined) {
+      throw new Error(`A coluna ${cabecalho.toUpperCase()} esta ausente na aba ACESSO.`);
+    }
+  });
+
+  return colunas;
+}
+
+function localizarUsuarioAcesso(nome) {
+  const aba = obterAbaAcesso();
+  const colunas = obterColunasAcesso(aba);
+  const ultimaLinha = aba.getLastRow();
+
+  if (ultimaLinha < 2) {
+    return null;
+  }
+
+  const registros = aba.getRange(2, 1, ultimaLinha - 1, aba.getLastColumn()).getValues();
+  const nomeNormalizado = normalizarTextoAcesso(nome);
+  const indice = registros.findIndex((registro) => normalizarTextoAcesso(registro[colunas.nome]) === nomeNormalizado);
+
+  if (indice < 0) {
+    return null;
+  }
+
+  return { aba, colunas, linha: indice + 2, valores: registros[indice] };
+}
+
+function validarSenhaNova(senha) {
+  if (typeof senha !== "string" || senha.length < 8) {
+    throw new Error("A senha deve ter pelo menos 8 caracteres.");
+  }
+}
+
+function obterPapelAcesso(valor) {
+  const papel = normalizarTextoAcesso(valor);
+
+  if (!["colaborador", "lider", "gestor", "administrador"].includes(papel)) {
+    throw new Error("O papel do usuario deve ser colaborador, lider, gestor ou administrador.");
+  }
+
+  return papel;
+}
+
+function converterBytesParaHex(bytes) {
+  return bytes.map((byte) => {
+    const valor = byte < 0 ? byte + 256 : byte;
+    return (`0${valor.toString(16)}`).slice(-2);
+  }).join("");
+}
+
+function criarHashSenha(senha, sal) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    `${sal}:${senha}`,
+    Utilities.Charset.UTF_8
+  );
+  return converterBytesParaHex(digest);
+}
+
+function criarSenhaHash(senha) {
+  const sal = Utilities.getUuid();
+  return `${sal}:${criarHashSenha(senha, sal)}`;
+}
+
+function senhaConfere(senha, senhaHash) {
+  const [sal, hash] = String(senhaHash || "").split(":");
+  return Boolean(sal && hash) && criarHashSenha(senha, sal) === hash;
+}
+
+function criarSessaoUsuario(usuario) {
+  const token = `${Utilities.getUuid()}${Utilities.getUuid()}`.replace(/-/g, "");
+  const sessao = {
+    nome: String(usuario.nome || "").trim(),
+    matricula: String(usuario.matricula || "").trim(),
+    papel: obterPapelAcesso(usuario.papel),
+    equipe: String(usuario.equipe || "").trim()
+  };
+  CacheService.getScriptCache().put(`sessao:${token}`, JSON.stringify(sessao), 21600);
+  return { token, usuario: sessao };
+}
+
+function criarCodigoConfirmacao() {
+  const numero = parseInt(Utilities.getUuid().replace(/-/g, "").slice(0, 12), 16) % 1000000;
+  return String(numero).padStart(6, "0");
+}
+
+function enviarCodigoPrimeiroLogin(dados) {
+  const usuario = localizarUsuarioAcesso(dados.nome);
+
+  if (!usuario || normalizarTextoAcesso(usuario.valores[usuario.colunas.ativo]) !== "sim") {
+    throw new Error("Nao foi possivel iniciar o primeiro acesso.");
+  }
+
+  if (normalizarTextoAcesso(usuario.valores[usuario.colunas.primeiro_login]) !== "sim" || usuario.valores[usuario.colunas.senha_hash]) {
+    throw new Error("A senha deste usuario ja foi definida.");
+  }
+
+  const email = String(usuario.valores[usuario.colunas["email corporativo"]] || "").trim();
+  if (!email) {
+    throw new Error("Nao ha e-mail corporativo cadastrado para este usuario.");
+  }
+
+  const codigo = criarCodigoConfirmacao();
+  const sal = Utilities.getUuid();
+  const chave = `primeiro-login:${normalizarTextoAcesso(usuario.valores[usuario.colunas.nome])}`;
+  CacheService.getScriptCache().put(chave, JSON.stringify({
+    sal,
+    codigoHash: criarHashSenha(codigo, sal),
+    tentativasRestantes: 5
+  }), 600);
+  MailApp.sendEmail({
+    to: email,
+    subject: "Codigo de confirmacao - Registro de TFM",
+    body: `Seu codigo de confirmacao para criar a senha e: ${codigo}\n\nO codigo expira em 10 minutos.`
+  });
+
+  return { sucesso: true, mensagem: "Enviamos um codigo de confirmacao para seu e-mail corporativo." };
+}
+
+function definirSenhaPrimeiroLogin(dados) {
+  validarSenhaNova(dados.senha);
+  const bloqueio = LockService.getScriptLock();
+  bloqueio.waitLock(10000);
+
+  try {
+    const usuario = localizarUsuarioAcesso(dados.nome);
+
+    if (!usuario || normalizarTextoAcesso(usuario.valores[usuario.colunas.ativo]) !== "sim") {
+      throw new Error("Acesso nao autorizado.");
+    }
+
+    if (normalizarTextoAcesso(usuario.valores[usuario.colunas.primeiro_login]) !== "sim" || usuario.valores[usuario.colunas.senha_hash]) {
+      throw new Error("A senha deste usuario ja foi definida.");
+    }
+
+    const chaveCodigo = `primeiro-login:${normalizarTextoAcesso(usuario.valores[usuario.colunas.nome])}`;
+    const codigoPendente = CacheService.getScriptCache().get(chaveCodigo);
+    if (!codigoPendente) {
+      throw new Error("O codigo expirou. Solicite um novo codigo.");
+    }
+
+    const confirmacao = JSON.parse(codigoPendente);
+    if (!senhaConfere(String(dados.codigo || ""), `${confirmacao.sal}:${confirmacao.codigoHash}`)) {
+      confirmacao.tentativasRestantes -= 1;
+      if (confirmacao.tentativasRestantes <= 0) {
+        CacheService.getScriptCache().remove(chaveCodigo);
+        throw new Error("Codigo bloqueado. Solicite um novo codigo.");
+      }
+      CacheService.getScriptCache().put(chaveCodigo, JSON.stringify(confirmacao), 600);
+      throw new Error(`Codigo invalido. Restam ${confirmacao.tentativasRestantes} tentativa(s).`);
+    }
+
+    usuario.aba.getRange(usuario.linha, usuario.colunas.senha_hash + 1).setValue(criarSenhaHash(dados.senha));
+    usuario.aba.getRange(usuario.linha, usuario.colunas.primeiro_login + 1).setValue("NAO");
+    if (usuario.colunas.atualizado_em !== undefined) {
+      usuario.aba.getRange(usuario.linha, usuario.colunas.atualizado_em + 1).setValue(new Date());
+    }
+    CacheService.getScriptCache().remove(chaveCodigo);
+
+    return { sucesso: true, ...criarSessaoUsuario({
+      nome: usuario.valores[usuario.colunas.nome],
+      matricula: usuario.valores[usuario.colunas.matricula],
+      papel: usuario.valores[usuario.colunas.papel],
+      equipe: usuario.colunas.equipe === undefined ? "" : usuario.valores[usuario.colunas.equipe]
+    }) };
+  } finally {
+    bloqueio.releaseLock();
+  }
+}
+
+function enviarCodigoRedefinicaoSenha(dados) {
+  const usuario = localizarUsuarioAcesso(dados.nome);
+
+  if (!usuario || normalizarTextoAcesso(usuario.valores[usuario.colunas.ativo]) !== "sim") {
+    throw new Error("Nao foi possivel iniciar a redefinicao de senha.");
+  }
+
+  if (normalizarTextoAcesso(usuario.valores[usuario.colunas.primeiro_login]) === "sim" || !usuario.valores[usuario.colunas.senha_hash]) {
+    throw new Error("Conclua o primeiro login para criar sua senha.");
+  }
+
+  const email = String(usuario.valores[usuario.colunas["email corporativo"]] || "").trim();
+  if (!email) {
+    throw new Error("Nao ha e-mail corporativo cadastrado para este usuario.");
+  }
+
+  const codigo = criarCodigoConfirmacao();
+  const sal = Utilities.getUuid();
+  const chave = `redefinir-senha:${normalizarTextoAcesso(usuario.valores[usuario.colunas.nome])}`;
+  CacheService.getScriptCache().put(chave, JSON.stringify({
+    sal,
+    codigoHash: criarHashSenha(codigo, sal),
+    tentativasRestantes: 5
+  }), 600);
+  MailApp.sendEmail({
+    to: email,
+    subject: "Redefinicao de senha - Registro de TFM",
+    body: `Seu codigo para redefinir a senha e: ${codigo}\n\nO codigo expira em 10 minutos.`
+  });
+
+  return { sucesso: true, mensagem: "Enviamos um codigo para seu e-mail corporativo." };
+}
+
+function redefinirSenha(dados) {
+  validarSenhaNova(dados.senha);
+  const bloqueio = LockService.getScriptLock();
+  bloqueio.waitLock(10000);
+
+  try {
+    const usuario = localizarUsuarioAcesso(dados.nome);
+    if (!usuario || normalizarTextoAcesso(usuario.valores[usuario.colunas.ativo]) !== "sim") {
+      throw new Error("Nao foi possivel redefinir a senha.");
+    }
+
+    const chave = `redefinir-senha:${normalizarTextoAcesso(usuario.valores[usuario.colunas.nome])}`;
+    const codigoPendente = CacheService.getScriptCache().get(chave);
+    if (!codigoPendente) {
+      throw new Error("O codigo expirou. Solicite um novo codigo.");
+    }
+
+    const confirmacao = JSON.parse(codigoPendente);
+    if (!senhaConfere(String(dados.codigo || ""), `${confirmacao.sal}:${confirmacao.codigoHash}`)) {
+      confirmacao.tentativasRestantes -= 1;
+      if (confirmacao.tentativasRestantes <= 0) {
+        CacheService.getScriptCache().remove(chave);
+        throw new Error("Codigo bloqueado. Solicite um novo codigo.");
+      }
+      CacheService.getScriptCache().put(chave, JSON.stringify(confirmacao), 600);
+      throw new Error(`Codigo invalido. Restam ${confirmacao.tentativasRestantes} tentativa(s).`);
+    }
+
+    usuario.aba.getRange(usuario.linha, usuario.colunas.senha_hash + 1).setValue(criarSenhaHash(dados.senha));
+    if (usuario.colunas.atualizado_em !== undefined) {
+      usuario.aba.getRange(usuario.linha, usuario.colunas.atualizado_em + 1).setValue(new Date());
+    }
+    CacheService.getScriptCache().remove(chave);
+
+    return { sucesso: true, mensagem: "Senha alterada. Entre com a nova senha." };
+  } finally {
+    bloqueio.releaseLock();
+  }
+}
+
+function autenticarUsuario(dados) {
+  const usuario = localizarUsuarioAcesso(dados.nome);
+
+  if (!usuario || normalizarTextoAcesso(usuario.valores[usuario.colunas.ativo]) !== "sim") {
+    throw new Error("Nome ou senha invalidos.");
+  }
+
+  if (normalizarTextoAcesso(usuario.valores[usuario.colunas.primeiro_login]) === "sim") {
+    throw new Error("Defina sua senha no primeiro acesso.");
+  }
+
+  if (!senhaConfere(dados.senha, usuario.valores[usuario.colunas.senha_hash])) {
+    throw new Error("Nome ou senha invalidos.");
+  }
+
+  return { sucesso: true, ...criarSessaoUsuario({
+    nome: usuario.valores[usuario.colunas.nome],
+    matricula: usuario.valores[usuario.colunas.matricula],
+    papel: usuario.valores[usuario.colunas.papel],
+    equipe: usuario.colunas.equipe === undefined ? "" : usuario.valores[usuario.colunas.equipe]
+  }) };
+}
+
+function doGet(evento) {
+  try {
+    const parametros = evento.parameter || {};
+    if (parametros.acao === "validarSessao") {
+      return responderJson(validarSessao(parametros.token));
+    }
+
+    if (parametros.acao === "dashboardCentral") {
+      return responderJson(buscarDashboardCentral(parametros.token, parametros.setor));
+    }
+
+    if (parametros.acao === "listarUsuariosDashboard") {
+      return responderJson({ sucesso: true, usuarios: listarUsuariosDashboard() });
+    }
+
+    if (parametros.acao === "listarTemposPadrao") {
+      return responderJson({ sucesso: true, atividades: listarTemposPadrao() });
+    }
+
+function validarSessao(token) {
+  const sessao = CacheService.getScriptCache().get(`sessao:${String(token || "")}`);
+
+  if (!sessao) {
+    return { sucesso: false, erro: "Sessao expirada. Entre novamente." };
+  }
+
+  return { sucesso: true, usuario: JSON.parse(sessao) };
+}
+
+function listarUsuariosDashboard() {
+  const aba = obterAbaAcesso();
+  const colunas = obterColunasAcesso(aba);
+  if (aba.getLastRow() < 2) {
+    return [];
+  }
+
+  return aba.getRange(2, 1, aba.getLastRow() - 1, aba.getLastColumn()).getValues()
+    .filter((linha) => normalizarTextoAcesso(linha[colunas.ativo]) === "sim")
+    .map((linha) => ({
+      nome: String(linha[colunas.nome] || "").trim(),
+      papel: normalizarTextoAcesso(linha[colunas.papel])
+    }))
+    .filter((usuario) => usuario.nome && ["lider", "gestor", "administrador"].includes(usuario.papel))
+    .sort((primeiro, segundo) => primeiro.nome.localeCompare(segundo.nome, "pt-BR"));
+}
+
+function obterSessaoObrigatoria(token) {
+  const resultado = validarSessao(token);
+  if (!resultado.sucesso) {
+    throw new Error(resultado.erro);
+  }
+  return resultado.usuario;
+}
+
+function normalizarSetor(valor) {
+  const setor = normalizarTextoAcesso(valor);
+  if (setor === "motores") return "Motores";
+  if (setor === "transmissoes") return "Transmissoes";
+  throw new Error("Setor invalido.");
+}
+
+function validarAcessoSetor(usuario, setor) {
+  if (["gestor", "administrador"].includes(usuario.papel)) {
+    return;
+  }
+
+  if (usuario.papel !== "lider" || normalizarTextoAcesso(usuario.equipe) !== normalizarTextoAcesso(setor)) {
+    throw new Error("Voce nao tem permissao para consultar este setor.");
+  }
+}
+
+function obterNumeroDashboard(valor) {
+  if (typeof valor === "number") return Number.isFinite(valor) ? valor : 0;
+  const texto = String(valor == null ? "" : valor).trim();
+  if (!texto) return 0;
+  const numero = Number(texto.replace(/\s/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", "."));
+  return Number.isFinite(numero) ? numero : 0;
+}
+
+function normalizarDataDashboard(valor) {
+  const dataNormalizada = normalizarValorPlanilha(valor);
+  const numeroSerial = Number(dataNormalizada);
+  if (Number.isFinite(numeroSerial) && numeroSerial >= 20000 && numeroSerial <= 80000) {
+    const dataSerial = new Date(Date.UTC(1899, 11, 30) + numeroSerial * 86400000);
+    return `${dataSerial.getUTCFullYear()}-${String(dataSerial.getUTCMonth() + 1).padStart(2, "0")}-${String(dataSerial.getUTCDate()).padStart(2, "0")}`;
+  }
+  const correspondencia = dataNormalizada.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (correspondencia) {
+    const primeiroNumero = Number(correspondencia[1]);
+    const segundoNumero = Number(correspondencia[2]);
+    if (primeiroNumero > 12) return `${correspondencia[3]}-${correspondencia[2]}-${correspondencia[1]}`;
+    if (segundoNumero > 12) return `${correspondencia[3]}-${correspondencia[1]}-${correspondencia[2]}`;
+  }
+
+  const dataAmericana = dataNormalizada.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return dataAmericana
+    ? `${dataAmericana[3]}-${String(dataAmericana[1]).padStart(2, "0")}-${String(dataAmericana[2]).padStart(2, "0")}`
+    : dataNormalizada;
+}
+
+function obterIndiceColunaDashboard(cabecalhos, nome) {
+  const nomeNormalizado = normalizarTextoAcesso(nome);
+  const indiceExato = cabecalhos.indexOf(nomeNormalizado);
+  if (indiceExato >= 0) return indiceExato;
+
+  const nomeCompacto = normalizarCabecalho(nome);
+  return cabecalhos.findIndex((cabecalho) => {
+    const cabecalhoCompacto = normalizarCabecalho(cabecalho);
+    return cabecalhoCompacto
+      && (cabecalhoCompacto === nomeCompacto
+      || cabecalhoCompacto.startsWith(nomeCompacto)
+      || nomeCompacto.startsWith(cabecalhoCompacto));
+  });
+}
+
+function lerAbaDashboard(nome) {
+  const aba = obterArquivoPlanilha().getSheetByName(nome);
+  if (!aba || aba.getLastRow() < 2) return { cabecalhos: [], linhas: [] };
+  const valores = aba.getDataRange().getValues();
+  return { cabecalhos: valores[0].map(normalizarTextoAcesso), linhas: valores.slice(1) };
+}
+
+function obterIndiceEntreNomesDashboard(cabecalhos, nomes) {
+  for (const nome of nomes) {
+    const indice = obterIndiceColunaDashboard(cabecalhos, nome);
+    if (indice >= 0) return indice;
+  }
+  return -1;
+}
+
+function nomeExcluidoDoDashboard(nome) {
+  return CONFIG.nomesExcluidosDashboard.some((nomeExcluido) => (
+    normalizarTextoAcesso(nomeExcluido) === normalizarTextoAcesso(nome)
+  ));
+}
+
+function buscarDashboardCentral(token, setorSolicitado) {
+  const usuario = obterSessaoObrigatoria(token);
+  const setor = normalizarSetor(setorSolicitado);
+  validarAcessoSetor(usuario, setor);
+
+  const sufixo = setor === "Motores" ? "Motores" : "Transmissões";
+  const banco = lerAbaDashboard(`Banco ${sufixo}`);
+  if (!banco.linhas.length) {
+    return { sucesso: true, setor, totalRegistros: 0, totalHoras: 0, totalTfms: 0, atividades: [], totalHorasTfmsEmAndamento: 0 };
+  }
+
+  const colunas = banco.cabecalhos;
+  const indiceHoras = colunas.indexOf("horas");
+  const indiceTfm = colunas.indexOf("tfm");
+  const indiceAtividade = colunas.indexOf("atividade");
+  const indiceNome = obterIndiceColunaDashboard(colunas, "nome");
+  const indiceMatricula = obterIndiceColunaDashboard(colunas, "matrícula");
+  const indiceData = obterIndiceColunaDashboard(colunas, "data");
+  const indiceTurno = obterIndiceColunaDashboard(colunas, "turno");
+  if (indiceHoras < 0 || indiceTfm < 0 || indiceAtividade < 0) {
+    throw new Error("A aba do setor nao possui as colunas HORAS, TFM e ATIVIDADE.");
+  }
+  const linhasBanco = banco.linhas.filter((linha) => (
+    !nomeExcluidoDoDashboard(indiceNome >= 0 ? linha[indiceNome] : "")
+  ));
+
+  const porAtividade = new Map();
+  const porColaborador = new Map();
+  const tfms = new Set();
+  const lancamentosDashboard = [];
+  const codigosDados = lerAbaDashboard(`Códigos ${sufixo}`);
+  const indiceCodigoAtividade = obterIndiceColunaDashboard(codigosDados.cabecalhos, "atividade");
+  const indiceCodigoTempoPadrao = obterIndiceColunaDashboard(codigosDados.cabecalhos, "tempo padrão");
+  const temposPadrao = new Map(codigosDados.linhas
+    .filter((linha) => indiceCodigoAtividade >= 0)
+    .map((linha) => [
+      normalizarTextoAcesso(linha[indiceCodigoAtividade]),
+      indiceCodigoTempoPadrao >= 0 ? obterNumeroDashboard(linha[indiceCodigoTempoPadrao]) : 0
+    ]));
+  let totalHoras = 0;
+  linhasBanco.forEach((linha) => {
+    const horas = obterNumeroDashboard(linha[indiceHoras]);
+    const tfm = String(linha[indiceTfm] || "").trim();
+    const atividade = String(linha[indiceAtividade] || "Não informada").trim() || "Não informada";
+    const nome = indiceNome >= 0 ? String(linha[indiceNome] || "Não informado").trim() : "Não informado";
+    const nomeNormalizado = normalizarTextoAcesso(nome);
+    const matricula = indiceMatricula >= 0 ? String(linha[indiceMatricula] || "").trim() : "";
+    const chaveColaborador = `nome:${nomeNormalizado}`;
+    const data = indiceData >= 0 ? normalizarDataDashboard(linha[indiceData]) : "";
+    const turno = indiceTurno >= 0 ? String(linha[indiceTurno] || "").trim() : "";
+    const horasPadrao = temposPadrao.get(normalizarTextoAcesso(atividade)) || 0;
+    totalHoras += horas;
+    if (tfm) tfms.add(tfm);
+    porAtividade.set(atividade, (porAtividade.get(atividade) || 0) + horas);
+    lancamentosDashboard.push({ nome, matricula, data, turno, atividade, tfm, horas, horasPadrao });
+    if (!porColaborador.has(chaveColaborador)) {
+      porColaborador.set(chaveColaborador, { nome, matricula, horas: 0, horasPadrao: 0, tfms: new Set(), ultimaData: data, atividades: new Map(), dias: new Map() });
+    }
+    const colaborador = porColaborador.get(chaveColaborador);
+    colaborador.horas += horas;
+    colaborador.horasPadrao += horasPadrao;
+    if (tfm) colaborador.tfms.add(tfm);
+    const atividadeColaborador = colaborador.atividades.get(atividade) || { horas: 0, horasPadrao: 0 };
+    atividadeColaborador.horas += horas;
+    atividadeColaborador.horasPadrao += horasPadrao;
+    colaborador.atividades.set(atividade, atividadeColaborador);
+    const chaveData = String(data || "");
+    if (chaveData) {
+      if (!colaborador.dias.has(chaveData)) colaborador.dias.set(chaveData, { data: chaveData, horas: 0, horasPadrao: 0, tfms: new Set() });
+      const dia = colaborador.dias.get(chaveData);
+      dia.horas += horas;
+      dia.horasPadrao += horasPadrao;
+      if (tfm) dia.tfms.add(tfm);
+    }
+    if (data && (!colaborador.ultimaData || new Date(data) > new Date(colaborador.ultimaData))) colaborador.ultimaData = data;
+  });
+
+  const atividades = [...porAtividade.entries()]
+    .map(([atividade, horas]) => ({ atividade, horas: Number(horas.toFixed(2)) }))
+    .sort((primeira, segunda) => segunda.horas - primeira.horas)
+    .slice(0, 8);
+  const resumoBi = lerAbaDashboard(`Resumo_BI ${sufixo}`);
+  const indiceTfmResumo = obterIndiceEntreNomesDashboard(resumoBi.cabecalhos, ["tfm", "número tfm", "numero tfm"]);
+  const indiceAtividadeResumo = obterIndiceColunaDashboard(resumoBi.cabecalhos, "atividade");
+  const indiceHorasResumo = obterIndiceEntreNomesDashboard(resumoBi.cabecalhos, ["horas registradas", "soma de horas", "horas"]);
+  const indicePadraoResumo = obterIndiceEntreNomesDashboard(resumoBi.cabecalhos, ["tempo padrão", "tempo padrao", "horas padrão", "horas padrao", "soma de tempo padrão"]);
+  const resumoPorTfm = new Map();
+  resumoBi.linhas.forEach((linha) => {
+    const tfm = indiceTfmResumo >= 0 ? String(linha[indiceTfmResumo] || "").trim() : "";
+    if (!tfm) return;
+    const resumo = resumoPorTfm.get(tfm) || { tfm, horas: 0, horasPadrao: 0 };
+    const atividade = indiceAtividadeResumo >= 0 ? String(linha[indiceAtividadeResumo] || "").trim() : "";
+    const horasPadraoResumo = indicePadraoResumo >= 0
+      ? obterNumeroDashboard(linha[indicePadraoResumo])
+      : (temposPadrao.get(normalizarTextoAcesso(atividade)) || 0);
+    resumo.horas += indiceHorasResumo >= 0 ? obterNumeroDashboard(linha[indiceHorasResumo]) : 0;
+    resumo.horasPadrao += horasPadraoResumo;
+    resumoPorTfm.set(tfm, resumo);
+  });
+  const resumoTfms = [...resumoPorTfm.values()].map((item) => ({
+    tfm: item.tfm,
+    horas: Number(item.horas.toFixed(2)),
+    horasPadrao: Number(item.horasPadrao.toFixed(2))
+  }));
+  const colaboradores = [...porColaborador.values()]
+    .map((colaborador) => ({
+      nome: colaborador.nome,
+      matricula: colaborador.matricula,
+      horas: Number(colaborador.horas.toFixed(2)),
+      horasPadrao: Number(colaborador.horasPadrao.toFixed(2)),
+      tfms: colaborador.tfms.size,
+      ultimaData: colaborador.ultimaData,
+      atividades: [...colaborador.atividades.entries()].map(([atividade, resumo]) => ({ atividade, horas: Number(resumo.horas.toFixed(2)), tempoPadrao: Number(resumo.horasPadrao.toFixed(2)) })).sort((primeira, segunda) => segunda.horas - primeira.horas),
+      dias: [...colaborador.dias.values()].map((dia) => ({ data: dia.data, horas: Number(dia.horas.toFixed(2)), horasPadrao: Number(dia.horasPadrao.toFixed(2)), tfms: dia.tfms.size, tfmNumeros: [...dia.tfms].sort() })).sort((primeira, segunda) => segunda.data.localeCompare(primeira.data))
+    }))
+    .sort((primeiro, segundo) => segundo.horas - primeiro.horas);
+  const tfmsAbertosDados = lerAbaDashboard(`TFMs Abertos ${sufixo}`);
+  const indiceStatusAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "status");
+  const indiceTfmAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "tfm");
+  const indiceResponsavelAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "nome do colaborador");
+  const indiceInicioEncontrado = obterIndiceEntreNomesDashboard(tfmsAbertosDados.cabecalhos, ["data inicial", "data de inicio", "início", "inicio"]);
+  const indiceInicioAberto = indiceInicioEncontrado >= 0
+    ? indiceInicioEncontrado
+    : normalizarCabecalho(tfmsAbertosDados.cabecalhos[2]).includes("data") ? 2 : -1;
+  const indiceDataTrabalhadaAberto = obterIndiceEntreNomesDashboard(tfmsAbertosDados.cabecalhos, ["data trabalhada", "data de trabalho"]);
+  const indiceHorasAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "horas");
+  const indiceHorasAdicionaisAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "horas adicionais");
+  const indiceMatriculaAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "matrícula do colaborador");
+  const indiceTurnoAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "turno");
+  const indiceAtividadeAberto = obterIndiceColunaDashboard(tfmsAbertosDados.cabecalhos, "atividade");
+  const linhasTfmsEmAndamento = tfmsAbertosDados.linhas
+    .filter((linha) => (
+      indiceStatusAberto >= 0
+      && normalizarTextoAcesso(linha[indiceStatusAberto]) === "em andamento"
+      && !nomeExcluidoDoDashboard(indiceResponsavelAberto >= 0 ? linha[indiceResponsavelAberto] : "")
+    ));
+  const totalHorasTfmsEmAndamento = linhasTfmsEmAndamento.reduce((total, linha) => (
+    total
+    + (indiceHorasAberto >= 0 ? obterNumeroDashboard(linha[indiceHorasAberto]) : 0)
+    + (indiceHorasAdicionaisAberto >= 0 ? obterNumeroDashboard(linha[indiceHorasAdicionaisAberto]) : 0)
+  ), 0);
+  const detalhesTfmsEmAndamento = linhasTfmsEmAndamento
+    .map((linha) => {
+      const dataInicial = indiceInicioAberto >= 0 ? normalizarDataDashboard(linha[indiceInicioAberto]) : "";
+      const dataTrabalhada = indiceDataTrabalhadaAberto >= 0 ? normalizarDataDashboard(linha[indiceDataTrabalhadaAberto]) : "";
+      return {
+        tfm: indiceTfmAberto >= 0 ? String(linha[indiceTfmAberto] || "-") : "-",
+        responsavel: indiceResponsavelAberto >= 0 ? String(linha[indiceResponsavelAberto] || "-") : "-",
+        matricula: indiceMatriculaAberto >= 0 ? String(linha[indiceMatriculaAberto] || "").trim() : "",
+        inicio: dataInicial || dataTrabalhada,
+        turno: indiceTurnoAberto >= 0 ? String(linha[indiceTurnoAberto] || "").trim() : "",
+        atividade: indiceAtividadeAberto >= 0 ? String(linha[indiceAtividadeAberto] || "").trim() : "",
+        horas: indiceHorasAberto >= 0 ? obterNumeroDashboard(linha[indiceHorasAberto]) : 0,
+        horasAdicionais: indiceHorasAdicionaisAberto >= 0 ? obterNumeroDashboard(linha[indiceHorasAdicionaisAberto]) : 0
+      };
+    });
+  const tfmsAbertosPorNumero = new Map();
+  detalhesTfmsEmAndamento.forEach((item) => {
+    const tfm = String(item.tfm || "-").trim() || "-";
+    const resumo = tfmsAbertosPorNumero.get(tfm) || {
+      tfm,
+      responsaveis: new Set(),
+      inicio: "",
+      horas: 0,
+      horasAdicionais: 0
+    };
+    if (item.responsavel && item.responsavel !== "-") resumo.responsaveis.add(item.responsavel);
+    const inicio = normalizarDataDashboard(item.inicio);
+    if (inicio && (!resumo.inicio || inicio < resumo.inicio)) resumo.inicio = inicio;
+    resumo.horas += item.horas;
+    resumo.horasAdicionais += item.horasAdicionais;
+    tfmsAbertosPorNumero.set(tfm, resumo);
+  });
+  const tfmsAbertos = [...tfmsAbertosPorNumero.values()]
+    .map((item) => ({
+      tfm: item.tfm,
+      responsavel: [...item.responsaveis].join(", ") || "-",
+      inicio: item.inicio,
+      horas: Number(item.horas.toFixed(2)),
+      horasAdicionais: Number(item.horasAdicionais.toFixed(2))
+    }))
+    .sort((primeiro, segundo) => primeiro.tfm.localeCompare(segundo.tfm, "pt-BR", { numeric: true }));
+  const disponibilidadeDados = lerAbaDashboard(`Disponibilidade Diária ${sufixo}`);
+  const abaDisponibilidade = obterArquivoPlanilha().getSheetByName(`Disponibilidade Diária ${sufixo}`);
+  const usarEstruturaPadraoDisponibilidade = disponibilidadeDados.cabecalhos.length >= 5;
+  const indiceSituacaoEncontrado = obterIndiceColunaDashboard(disponibilidadeDados.cabecalhos, "situação");
+  const indiceNomeDisponibilidadeEncontrado = obterIndiceColunaDashboard(disponibilidadeDados.cabecalhos, "nome");
+  const indiceMatriculaDisponibilidadeEncontrado = obterIndiceColunaDashboard(disponibilidadeDados.cabecalhos, "matrícula");
+  const indiceDataDisponibilidadeEncontrado = obterIndiceColunaDashboard(disponibilidadeDados.cabecalhos, "data");
+  const indiceHorasDisponiveisEncontrado = ["horas disponíveis", "horas disponiveis", "horas dispo", "disponibilidade"]
+    .map((nome) => obterIndiceColunaDashboard(disponibilidadeDados.cabecalhos, nome))
+    .find((indice) => indice >= 0);
+  const indiceDataDisponibilidade = indiceDataDisponibilidadeEncontrado >= 0 ? indiceDataDisponibilidadeEncontrado : (usarEstruturaPadraoDisponibilidade ? 0 : -1);
+  const indiceNomeDisponibilidade = indiceNomeDisponibilidadeEncontrado >= 0 ? indiceNomeDisponibilidadeEncontrado : (usarEstruturaPadraoDisponibilidade ? 1 : -1);
+  const indiceMatriculaDisponibilidade = indiceMatriculaDisponibilidadeEncontrado >= 0 ? indiceMatriculaDisponibilidadeEncontrado : (usarEstruturaPadraoDisponibilidade ? 2 : -1);
+  const indiceHorasDisponiveis = indiceHorasDisponiveisEncontrado >= 0 ? indiceHorasDisponiveisEncontrado : (usarEstruturaPadraoDisponibilidade ? 3 : -1);
+  const indiceSituacao = indiceSituacaoEncontrado >= 0 ? indiceSituacaoEncontrado : (usarEstruturaPadraoDisponibilidade ? 4 : -1);
+  if (indiceDataDisponibilidade < 0 || indiceNomeDisponibilidade < 0 || indiceHorasDisponiveis < 0) {
+    throw new Error("A aba Disponibilidade Diária não possui as colunas DATA, NOME e HORAS DISPONÍVEIS.");
+  }
+  const valoresExibidosDisponibilidade = abaDisponibilidade && abaDisponibilidade.getLastRow() > 1
+    ? abaDisponibilidade.getRange(2, 1, abaDisponibilidade.getLastRow() - 1, Math.max(abaDisponibilidade.getLastColumn(), 5)).getDisplayValues()
+    : [];
+  const disponibilidade = disponibilidadeDados.linhas
+    .map((linha, indice) => ({
+      nome: indiceNomeDisponibilidade >= 0 ? String(linha[indiceNomeDisponibilidade] || "-") : "-",
+      matricula: indiceMatriculaDisponibilidade >= 0 ? String(linha[indiceMatriculaDisponibilidade] || "").trim() : "",
+      data: indiceDataDisponibilidade >= 0 ? normalizarDataDashboard(linha[indiceDataDisponibilidade]) : "",
+      situacao: indiceSituacao >= 0 ? String(linha[indiceSituacao] || "-") : "-",
+      horasDisponiveis: indiceHorasDisponiveis >= 0
+        ? obterNumeroDashboard(valoresExibidosDisponibilidade[indice]?.[indiceHorasDisponiveis] ?? linha[indiceHorasDisponiveis])
+        : 0
+    }))
+    .filter((item) => !nomeExcluidoDoDashboard(item.nome));
+
+  return {
+    sucesso: true,
+    setor,
+    totalRegistros: linhasBanco.length,
+    totalHoras: Number(totalHoras.toFixed(2)),
+    totalTfms: tfms.size,
+    atividades,
+    lancamentos: lancamentosDashboard,
+    resumoTfms,
+    temposPadraoAtividades: [...temposPadrao.entries()].map(([atividade, tempoPadrao]) => ({ atividade, tempoPadrao })).sort((primeira, segunda) => primeira.atividade.localeCompare(segunda.atividade, "pt-BR")),
+    colaboradores,
+    tfmsAbertos,
+    detalhesTfmsEmAndamento,
+    totalHorasTfmsEmAndamento: Number(totalHorasTfmsEmAndamento.toFixed(2)),
+    disponibilidade
+  };
+}
+
+    if (parametros.acao === "resumoGeral") {
+      return responderJson(buscarResumoGeral());
+    }
+
+    if (parametros.acao === "historicoRecentes") {
+      const limite = Number(parametros.limite || 5);
+      return responderJson(buscarHistoricoRecente(limite));
+    }
+
+    if (parametros.acao === "geralOficina") {
+      return responderJson(buscarGeralOficina());
+    }
+
+    if (parametros.acao === "desempenhoColaborador") {
+      const matricula = String(parametros.matricula || "").trim();
+
+      if (!matricula) {
+        return responderJson({ sucesso: false, erro: "Informe a matricula do colaborador." });
+      }
+
+      return responderJson(buscarDesempenhoColaborador(matricula));
+    }
+
+    if (parametros.acao === "alertasDisponibilidade") {
+      const matricula = String(parametros.matricula || "").trim();
+
+      if (!matricula) {
+        return responderJson({ sucesso: false, erro: "Informe a matricula do colaborador." });
+      }
+
+      return responderJson({ sucesso: true, alertas: buscarAlertasDisponibilidade(matricula) });
+    }
+
+    if (parametros.acao === "listarTfmsAbertos") {
+      const matricula = String(parametros.matricula || "").trim();
+
+      if (!matricula) {
+        return responderJson({ sucesso: false, erro: "Informe a matricula do colaborador." });
+      }
+
+      return responderJson({ sucesso: true, tfms: listarTfmsAbertos(matricula) });
+    }
+
+    if (parametros.acao === "detalharTfmAberto") {
+      const tfm = String(parametros.tfm || "").trim();
+      const matriculaHost = String(parametros.matriculaHost || "").trim();
+
+      if (!/^\d{6}$/.test(tfm) || !matriculaHost) {
+        return responderJson({ sucesso: false, erro: "Informe um TFM e a matricula do host." });
+      }
+
+      return responderJson(detalharTfmAberto(tfm, matriculaHost));
+    }
+
+    if (parametros.acao === "buscarTfms") {
+      const tfms = extrairTfmsParametro(parametros.tfms);
+
+      if (tfms.length === 0) {
+        return responderJson({ sucesso: false, erro: "Informe ao menos um TFM valido." });
+      }
+
+      return responderJson({
+        sucesso: true,
+        resultados: buscarDocumentosPorTfms(tfms)
+      });
+    }
+
+    if (parametros.acao !== "buscarTfm") {
+      return responderJson({ sucesso: false, erro: "Acao invalida." });
+    }
+
+    const tfm = String(parametros.tfm || "").trim();
+
+    if (!/^\d{6}$/.test(tfm)) {
+      return responderJson({ sucesso: false, erro: "TFM invalido." });
+    }
+
+    return responderJson(buscarDocumentoPorTfm(tfm));
+  } catch (erro) {
+    return responderJson({
+      sucesso: false,
+      erro: erro.message || "Erro ao consultar TFM."
+    });
+  }
+}
+
+function listarTemposPadrao() {
+  const aba = obterArquivoPlanilha().getSheetByName(CONFIG.nomeAbaCodigos);
+
+  if (!aba || aba.getLastRow() < 2) {
+    return [];
+  }
+
+  const valores = aba.getDataRange().getValues();
+  const cabecalhos = valores[0];
+  const colunaCodigo = obterIndiceCabecalho(cabecalhos, ["Codigo", "Código"]);
+  const colunaAtividade = obterIndiceCabecalho(cabecalhos, ["Atividade"]);
+  const colunaTempoPadrao = obterIndiceCabecalho(cabecalhos, ["Tempo Padrao", "Tempo Padrão"]);
+
+  if (colunaAtividade < 0 || colunaTempoPadrao < 0) {
+    throw new Error("As colunas Atividade e Tempo Padrão não foram encontradas na aba Códigos.");
+  }
+
+  return valores.slice(1).map((linha) => ({
+    codigo: colunaCodigo >= 0 ? linha[colunaCodigo] : "",
+    atividade: String(linha[colunaAtividade] || "").trim(),
+    tempoPadrao: Number(linha[colunaTempoPadrao]) || 0
+  })).filter((item) => item.atividade);
+}
+
+function obterArquivoPlanilha() {
+  const arquivo = CONFIG.planilhaId
+    ? SpreadsheetApp.openById(CONFIG.planilhaId)
+    : SpreadsheetApp.getActiveSpreadsheet();
+
+  if (!arquivo) {
+    throw new Error("Informe CONFIG.planilhaId ou publique este codigo em um Apps Script vinculado a uma planilha.");
+  }
+
+  return arquivo;
+}
+
+function obterAbaPrincipal() {
+  const arquivo = obterArquivoPlanilha();
+  const aba = arquivo.getSheetByName(CONFIG.nomeAba);
+
+  if (!aba) {
+    throw new Error("A aba Página1 não é utilizada pelo Dashboard Central e não será criada automaticamente.");
+  }
+
+  return aba;
+}
+
+function garantirCabecalhos(aba, cabecalhosEsperados) {
+  const ultimaColuna = Math.max(aba.getLastColumn(), 1);
+  const cabecalhosAtuais = aba.getRange(1, 1, 1, ultimaColuna).getValues()[0];
+  const novosCabecalhos = cabecalhosEsperados.filter((cabecalho) => (
+    obterIndiceCabecalho(cabecalhosAtuais, [cabecalho]) === -1
+  ));
+
+  if (novosCabecalhos.length === 0) {
+    return;
+  }
+
+  aba.getRange(1, ultimaColuna + 1, 1, novosCabecalhos.length).setValues([novosCabecalhos]);
+}
+
+function normalizarColaboradoresAdicionais(colaboradores) {
+  if (!Array.isArray(colaboradores)) {
+    return [];
+  }
+
+  return colaboradores.map((colaborador) => ({
+    nome: String(colaborador.nome || "").trim(),
+    matricula: String(colaborador.matricula || "").trim(),
+    horas: String(colaborador.horas || "").trim().replace(",", "."),
+    lancamentos: Array.isArray(colaborador.lancamentos)
+      ? colaborador.lancamentos.map((lancamento) => ({
+        data: String(lancamento.data || "").trim(),
+        horas: converterHorasNumero(lancamento.horas)
+      })).filter((lancamento) => /^\d{4}-\d{2}-\d{2}$/.test(lancamento.data) && lancamento.horas > 0)
+      : []
+  })).filter((colaborador) => colaborador.nome && colaborador.matricula && (colaborador.lancamentos.length || converterHorasNumero(colaborador.horas) > 0));
+}
+
+function separarColaboradoresAdicionais(nomes, horas) {
+  const listaNomes = String(nomes || "").split(" | ").map((item) => item.trim()).filter(Boolean);
+  const listaHoras = String(horas || "").split(" | ").map((item) => item.trim()).filter(Boolean);
+
+  return listaNomes.map((item, indice) => {
+    const matriculaEncontrada = item.match(/\(([^)]+)\)$/);
+    const nome = item.replace(/\s*\([^)]+\)$/, "").trim();
+    const horasTexto = listaHoras[indice] || "";
+
+    return {
+      nome,
+      matricula: matriculaEncontrada ? matriculaEncontrada[1] : "",
+      horas: horasTexto.includes(":") ? horasTexto.split(":").slice(1).join(":").trim() : horasTexto
+    };
+  }).filter((colaborador) => colaborador.nome || colaborador.horas);
+}
+
+function converterHorasNumero(valor) {
+  const horas = Number(String(valor || "0").replace(",", "."));
+  return Number.isFinite(horas) ? horas : 0;
+}
+
+function verificarLimiteHoras(dados) {
+  const recebidos = Array.isArray(dados.lancamentos) ? dados.lancamentos : [];
+  const tfmIgnorado = String(dados.tfmIgnorado || "").trim();
+  const novosPorChave = {};
+
+  recebidos.forEach((lancamento) => {
+    const matricula = String(lancamento.matricula || "").trim();
+    const data = String(lancamento.data || "").trim();
+    const horas = converterHorasNumero(lancamento.horas);
+
+    if (!matricula || !/^\d{4}-\d{2}-\d{2}$/.test(data) || horas <= 0) {
+      return;
+    }
+
+    const chave = `${matricula}|${data}`;
+    if (!novosPorChave[chave]) {
+      novosPorChave[chave] = {
+        nome: String(lancamento.nome || "").trim(),
+        matricula,
+        data,
+        horasNovas: 0,
+        horasExistentes: 0
+      };
+    }
+    novosPorChave[chave].horasNovas += horas;
+  });
+
+  const chaves = Object.keys(novosPorChave);
+  if (!chaves.length) {
+    return responderJson({ sucesso: true, alertas: [] });
+  }
+
+  const disponibilidades = obterDisponibilidadesDiarias(new Set(chaves));
+
+  const chavesBuscadas = new Set(chaves);
+  const planilha = obterAbaPrincipal();
+  const dadosPrincipais = planilha.getDataRange().getValues();
+  const cabecalhosPrincipais = dadosPrincipais[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhosPrincipais, ["Data"]);
+  const colunaMatricula = obterIndiceCabecalho(cabecalhosPrincipais, ["Matricula", "Matrícula"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhosPrincipais, ["Horas", "Horas Trabalhadas"]);
+
+  if (colunaData >= 0 && colunaMatricula >= 0 && colunaHoras >= 0) {
+    dadosPrincipais.slice(1).forEach((linha) => {
+      const chave = `${String(linha[colunaMatricula] || "").trim()}|${normalizarValorPlanilha(linha[colunaData])}`;
+      if (chavesBuscadas.has(chave)) {
+        novosPorChave[chave].horasExistentes += converterHorasNumero(linha[colunaHoras]);
+      }
+    });
+  }
+
+  const abaAbertos = obterAbaTfmsAbertos();
+  const dadosAbertos = abaAbertos.getDataRange().getValues();
+  const cabecalhosAbertos = dadosAbertos[0] || [];
+  const colunaStatusAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Status"]);
+  const colunaTfmAberto = obterIndiceCabecalho(cabecalhosAbertos, ["TFM"]);
+  const colunaDataAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Data Trabalhada"]);
+  const colunaMatriculaAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Matricula do Colaborador", "Matrícula do Colaborador"]);
+  const colunaHorasAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Horas"]);
+  const colunaHorasAdicionais = obterIndiceCabecalho(cabecalhosAbertos, ["Horas Adicionais"]);
+
+  if (colunaStatusAberto >= 0 && colunaDataAberto >= 0 && colunaMatriculaAberto >= 0) {
+    dadosAbertos.slice(1).forEach((linha) => {
+      if (String(linha[colunaStatusAberto] || "").trim().toUpperCase() !== "EM ANDAMENTO") {
+        return;
+      }
+
+      if (tfmIgnorado && colunaTfmAberto >= 0 && String(linha[colunaTfmAberto] || "").trim() === tfmIgnorado) {
+        return;
+      }
+
+      const chave = `${String(linha[colunaMatriculaAberto] || "").trim()}|${normalizarValorPlanilha(linha[colunaDataAberto])}`;
+      if (chavesBuscadas.has(chave)) {
+        novosPorChave[chave].horasExistentes += converterHorasNumero(colunaHorasAberto >= 0 ? linha[colunaHorasAberto] : 0);
+        novosPorChave[chave].horasExistentes += converterHorasNumero(colunaHorasAdicionais >= 0 ? linha[colunaHorasAdicionais] : 0);
+      }
+    });
+  }
+
+  const alertas = chaves.map((chave) => {
+    const item = novosPorChave[chave];
+    const horasExistentes = Number(item.horasExistentes.toFixed(2));
+    const horasNovas = Number(item.horasNovas.toFixed(2));
+    const disponibilidade = disponibilidades.get(chave);
+    return {
+      nome: item.nome,
+      matricula: item.matricula,
+      data: item.data,
+      horasExistentes,
+      horasNovas,
+      total: Number((horasExistentes + horasNovas).toFixed(2)),
+      horasDisponiveis: disponibilidade?.horasDisponiveis,
+      situacao: disponibilidade?.situacao || "",
+      tipo: classificarTipoDisponibilidade(disponibilidade),
+      atualizadoEm: disponibilidade?.atualizadoEm || ""
+    };
+  }).filter((item) => item.horasDisponiveis !== undefined && item.total > item.horasDisponiveis);
+
+  return responderJson({ sucesso: true, alertas });
+}
+
+function obterAbaDisponibilidade() {
+  const arquivo = obterArquivoPlanilha();
+  const aba = arquivo.getSheetByName(CONFIG.nomeAbaDisponibilidade) || arquivo.insertSheet(CONFIG.nomeAbaDisponibilidade);
+
+  if (aba.getLastRow() === 0) {
+    aba.getRange(1, 1, 1, CABECALHOS_DISPONIBILIDADE.length).setValues([CABECALHOS_DISPONIBILIDADE]);
+  } else {
+    garantirCabecalhos(aba, CABECALHOS_DISPONIBILIDADE);
+  }
+
+  return aba;
+}
+
+function obterDisponibilidadesDiarias(chavesBuscadas) {
+  const disponibilidades = new Map();
+  const dados = obterAbaDisponibilidade().getDataRange().getValues();
+  const cabecalhos = dados[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhos, ["Data"]);
+  const colunaMatricula = obterIndiceCabecalho(cabecalhos, ["Matricula", "Matrícula"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhos, ["Horas Disponiveis", "Horas Disponíveis", "Disponibilidade"]);
+  const colunaSituacao = obterIndiceCabecalho(cabecalhos, ["Situacao", "Situação", "Motivo"]);
+  const colunaAtualizadoEm = obterIndiceCabecalho(cabecalhos, ["Atualizado Em", "Atualizado em", "Atualização"]);
+
+  if (colunaData < 0 || colunaMatricula < 0 || colunaHoras < 0) {
+    return disponibilidades;
+  }
+
+  dados.slice(1).forEach((linha) => {
+    const matricula = String(linha[colunaMatricula] || "").trim();
+    const data = normalizarValorPlanilha(linha[colunaData]);
+    const chave = `${matricula}|${data}`;
+
+    if (matricula && /^\d{4}-\d{2}-\d{2}$/.test(data) && (!chavesBuscadas || chavesBuscadas.has(chave))) {
+      disponibilidades.set(chave, {
+        horasDisponiveis: converterHorasNumero(linha[colunaHoras]),
+        situacao: colunaSituacao >= 0 ? String(linha[colunaSituacao] || "").trim() : "",
+        atualizadoEm: colunaAtualizadoEm >= 0 ? normalizarDataHoraPlanilha(linha[colunaAtualizadoEm]) : ""
+      });
+    }
+  });
+
+  return disponibilidades;
+}
+
+function buscarAlertasDisponibilidade(matricula) {
+  const matriculaBusca = String(matricula || "").trim();
+  const totais = new Map();
+  const nomes = new Map();
+  const adicionarHoras = (data, horas, nome) => {
+    const dataNormalizada = normalizarValorPlanilha(data);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataNormalizada)) return;
+    const chave = `${matriculaBusca}|${dataNormalizada}`;
+    totais.set(chave, (totais.get(chave) || 0) + converterHorasNumero(horas));
+    if (nome) nomes.set(chave, String(nome).trim());
+  };
+
+  const dadosPrincipais = obterAbaPrincipal().getDataRange().getValues();
+  const cabecalhosPrincipais = dadosPrincipais[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhosPrincipais, ["Data"]);
+  const colunaNome = obterIndiceCabecalho(cabecalhosPrincipais, ["Nome"]);
+  const colunaMatricula = obterIndiceCabecalho(cabecalhosPrincipais, ["Matricula", "Matrícula"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhosPrincipais, ["Horas", "Horas Trabalhadas"]);
+
+  if (colunaData >= 0 && colunaMatricula >= 0 && colunaHoras >= 0) {
+    dadosPrincipais.slice(1).forEach((linha) => {
+      if (String(linha[colunaMatricula] || "").trim() === matriculaBusca) {
+        adicionarHoras(linha[colunaData], linha[colunaHoras], colunaNome >= 0 ? linha[colunaNome] : "");
+      }
+    });
+  }
+
+  const dadosAbertos = obterAbaTfmsAbertos().getDataRange().getValues();
+  const cabecalhosAbertos = dadosAbertos[0] || [];
+  const colunaStatusAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Status"]);
+  const colunaDataAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Data Trabalhada"]);
+  const colunaNomeAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Nome do Colaborador"]);
+  const colunaMatriculaAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Matricula do Colaborador", "Matrícula do Colaborador"]);
+  const colunaHorasAberto = obterIndiceCabecalho(cabecalhosAbertos, ["Horas"]);
+  const colunaHorasAdicionais = obterIndiceCabecalho(cabecalhosAbertos, ["Horas Adicionais"]);
+
+  if (colunaStatusAberto >= 0 && colunaDataAberto >= 0 && colunaMatriculaAberto >= 0) {
+    dadosAbertos.slice(1).forEach((linha) => {
+      if (String(linha[colunaStatusAberto] || "").trim().toUpperCase() !== "EM ANDAMENTO"
+          || String(linha[colunaMatriculaAberto] || "").trim() !== matriculaBusca) return;
+      const nome = colunaNomeAberto >= 0 ? linha[colunaNomeAberto] : "";
+      adicionarHoras(linha[colunaDataAberto], colunaHorasAberto >= 0 ? linha[colunaHorasAberto] : 0, nome);
+      adicionarHoras(linha[colunaDataAberto], colunaHorasAdicionais >= 0 ? linha[colunaHorasAdicionais] : 0, nome);
+    });
+  }
+
+  const chaves = new Set(totais.keys());
+  const disponibilidades = obterDisponibilidadesDiarias(chaves);
+
+  return Array.from(chaves).map((chave) => {
+    const partes = chave.split("|");
+    const disponibilidade = disponibilidades.get(chave);
+    return {
+      nome: nomes.get(chave) || "",
+      matricula: partes[0],
+      data: partes[1],
+      total: Number((totais.get(chave) || 0).toFixed(2)),
+      horasDisponiveis: disponibilidade?.horasDisponiveis,
+      situacao: disponibilidade?.situacao || "",
+      tipo: classificarTipoDisponibilidade(disponibilidade),
+      atualizadoEm: disponibilidade?.atualizadoEm || ""
+    };
+  }).filter((item) => item.horasDisponiveis !== undefined && item.total > 9)
+    .sort((primeiro, segundo) => segundo.data.localeCompare(primeiro.data));
+}
+
+function classificarTipoDisponibilidade(disponibilidade) {
+  const situacao = String(disponibilidade?.situacao || "").trim().toLowerCase();
+  const situacaoNormalizada = situacao.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  if (/ferias|afastado|atestado|falta/.test(situacaoNormalizada)) {
+    return "ausencia";
+  }
+
+  if (/sem horas|nao informad|nao preenchid|pendente/.test(situacaoNormalizada)) {
+    return "nao-informada";
+  }
+
+  return "excesso";
+}
+
+function normalizarDataHoraPlanilha(valor) {
+  if (Object.prototype.toString.call(valor) === "[object Date]" && !Number.isNaN(valor.getTime())) {
+    return Utilities.formatDate(valor, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+  }
+
+  return String(valor == null ? "" : valor).trim();
+}
+
+function normalizarValorPlanilha(valor) {
+  if (Object.prototype.toString.call(valor) === "[object Date]" && !Number.isNaN(valor.getTime())) {
+    return Utilities.formatDate(valor, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+
+  if (typeof valor === "number") {
+    return String(valor);
+  }
+
+  return String(valor == null ? "" : valor).trim().replace(",", ".");
+}
+
+function valoresPlanilhaIguais(valorAtual, novoValor) {
+  return normalizarValorPlanilha(valorAtual) === normalizarValorPlanilha(novoValor);
+}
+
+function criarChaveColaborador(nome, matricula) {
+  const matriculaTexto = String(matricula || "").trim();
+
+  return matriculaTexto || normalizarCabecalho(nome);
+}
+
+function registrarColaboradorResultado(resultado, nome, matricula, horas, data) {
+  const nomeTexto = String(nome || "").trim();
+  const matriculaTexto = String(matricula || "").trim();
+  const chave = criarChaveColaborador(nomeTexto, matriculaTexto);
+
+  if (!chave) {
+    return "";
+  }
+
+  if (!resultado._colaboradores[chave]) {
+    resultado._colaboradores[chave] = {
+      nome: nomeTexto,
+      matricula: matriculaTexto,
+      horas: 0,
+      lancamentos: []
+    };
+  }
+
+  const horasNumero = converterHorasNumero(horas);
+  resultado._colaboradores[chave].horas += horasNumero;
+
+  if (data && horasNumero > 0) {
+    resultado._colaboradores[chave].lancamentos.push({ data, horas: horasNumero });
+  }
+
+  return chave;
+}
+
+function criarLinhaApontamento(cabecalhos, valores) {
+  return cabecalhos.map((cabecalho) => {
+    const normalizado = normalizarCabecalho(cabecalho);
+
+    if (normalizado === "data") return valores.data;
+    if (["nome", "nome do colaborador", "colaborador"].includes(normalizado)) return valores.nome;
+    if (["matricula", "matrícula"].includes(normalizado)) return valores.matricula;
+    if (normalizado === "turno") return valores.turno;
+    if (["tfm", "numero do tfm", "número do tfm"].includes(normalizado)) return valores.tfm;
+    if (["projeto", "codigo do projeto", "código do projeto"].includes(normalizado)) return valores.projeto;
+    if (["atividade", "atividade realizada"].includes(normalizado)) return valores.atividade;
+    if (["horas", "horas trabalhadas"].includes(normalizado)) return valores.horas;
+    if (["observacao", "observação", "observacao da atividade", "observação da atividade"].includes(normalizado)) return valores.observacao;
+    if (["colaboradores adicionais", "colaborador adicional"].includes(normalizado)) return valores.colaboradoresAdicionais;
+    if (["horas colaboradores", "horas dos colaboradores"].includes(normalizado)) return valores.horasColaboradores;
+    if (["nome do pdf", "pdf", "nome documento", "nome do documento"].includes(normalizado)) return valores.nomesDocumentos;
+    if (["link do pdf", "link pdf", "url do pdf", "documento", "link do documento"].includes(normalizado)) return valores.linksDocumentos;
+
+    return "";
+  });
+}
+
+function obterAbaDadosComplementares() {
+  const arquivo = obterArquivoPlanilha();
+  const aba = arquivo.getSheetByName(CONFIG.nomeAbaDadosComplementares) || arquivo.insertSheet(CONFIG.nomeAbaDadosComplementares);
+
+  if (aba.getLastRow() === 0) {
+    aba.getRange(1, 1, 1, CABECALHOS_DADOS_COMPLEMENTARES.length).setValues([CABECALHOS_DADOS_COMPLEMENTARES]);
+  } else {
+    garantirCabecalhos(aba, CABECALHOS_DADOS_COMPLEMENTARES);
+  }
+
+  return aba;
+}
+
+function enviarDocumentosPorEmail(dados) {
+  const documentos = Array.isArray(dados.documentos)
+    ? dados.documentos
+    : (dados.documento ? [dados.documento] : []);
+  const tiposPermitidos = ["application/pdf", "image/png", "image/jpeg"];
+  const anexos = [];
+
+  const documentosValidos = documentos
+    .filter((documento) => documento && documento.conteudoBase64)
+    .map((documento) => {
+      if (!tiposPermitidos.includes(documento.tipo)) {
+        throw new Error("Anexe apenas arquivos PDF, PNG, JPG ou JPEG.");
+      }
+
+      if (Number(documento.tamanho) > 5 * 1024 * 1024) {
+        throw new Error("Cada arquivo deve ter no maximo 5 MB.");
+      }
+
+      const bytes = Utilities.base64Decode(documento.conteudoBase64);
+      const nomeArquivo = criarNomeArquivoDocumento(dados.tfm, documento.nome);
+      const blob = Utilities.newBlob(bytes, documento.tipo, nomeArquivo);
+      anexos.push(blob);
+
+      return {
+        nome: nomeArquivo,
+        url: CONFIG.linkPastaAnexos,
+        id: "",
+        tamanho: documento.tamanho
+      };
+    });
+
+  if (anexos.length > 0) {
+    MailApp.sendEmail({
+      to: CONFIG.emailAnexosDestino,
+      subject: CONFIG.assuntoEmailAnexos,
+      body: criarCorpoEmailAnexos(dados, documentosValidos),
+      attachments: anexos
+    });
+  }
+
+  return documentosValidos;
+}
+
+function criarNomeArquivoDocumento(tfm, nomeOriginal) {
+  const nomeSeguro = String(nomeOriginal || "documento").replace(/[\\/:*?"<>|]/g, "-");
+  const prefixo = /^\d{6}$/.test(String(tfm || "")) ? `TFM ${tfm} - ` : "";
+
+  return `${prefixo}${nomeSeguro}`;
+}
+
+function criarCorpoEmailAnexos(dados, documentos) {
+  const nomesDocumentos = documentos.map((documento) => documento.nome).join("\n");
+
+  return [
+    "Anexos de apontamento para salvar no OneDrive pelo Power Automate.",
+    "",
+    `TFM: ${dados.tfm || ""}`,
+    `Data: ${dados.data || ""}`,
+    `Nome: ${dados.nome || ""}`,
+    `Matricula: ${dados.matricula || ""}`,
+    "",
+    "Arquivos:",
+    nomesDocumentos || "Nenhum arquivo informado."
+  ].join("\n");
+}
+
+function extrairTfmsParametro(valor) {
+  const tfms = String(valor || "").match(/\d{6}/g) || [];
+  return [...new Set(tfms)];
+}
+
+function buscarDocumentoPorTfm(tfm) {
+  return buscarDocumentosPorTfms([tfm])[0];
+}
+
+function buscarDocumentosPorTfms(tfms) {
+  const aba = obterAbaPrincipal();
+  const dados = aba.getDataRange().getValues();
+  const cabecalhos = dados[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhos, ["Data"]);
+  const colunaTurno = obterIndiceCabecalho(cabecalhos, ["Turno"]);
+  const colunaNome = obterIndiceCabecalho(cabecalhos, ["Nome", "Nome do Colaborador", "Colaborador"]);
+  const colunaMatricula = obterIndiceCabecalho(cabecalhos, ["Matricula", "Matrícula"]);
+  const colunaTfm = obterIndiceCabecalho(cabecalhos, ["TFM", "Numero do TFM", "Número do TFM"]);
+  const colunaProjeto = obterIndiceCabecalho(cabecalhos, ["Projeto", "Codigo do Projeto", "Código do Projeto"]);
+  const colunaAtividade = obterIndiceCabecalho(cabecalhos, ["Atividade", "Atividade Realizada"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhos, ["Horas", "Horas Trabalhadas"]);
+  const colunaObservacao = obterIndiceCabecalho(cabecalhos, ["Observacao", "Observação", "Observacao da atividade", "Observação da atividade"]);
+  const colunaColaboradoresAdicionais = obterIndiceCabecalho(cabecalhos, ["Colaboradores adicionais", "Colaborador adicional"]);
+  const colunaHorasColaboradores = obterIndiceCabecalho(cabecalhos, ["Horas colaboradores", "Horas dos colaboradores"]);
+  const colunaNomePdf = obterIndiceCabecalho(cabecalhos, ["Nome do PDF", "PDF", "Nome Documento", "Nome do Documento"]);
+  const colunaLinkPdf = obterIndiceCabecalho(cabecalhos, ["Link do PDF", "Link PDF", "URL do PDF", "Documento", "Link do Documento"]);
+
+  if (colunaTfm === -1) {
+    throw new Error("Cabecalhos da planilha nao encontrados.");
+  }
+
+  const tfmsNormalizados = [...new Set(tfms.map((item) => String(item || "").trim()).filter(Boolean))];
+  const tfmsBuscados = new Set(tfmsNormalizados);
+  const resultados = tfmsNormalizados.reduce((acumulador, item) => {
+    acumulador[item] = {
+      sucesso: true,
+      encontrado: false,
+      tfm: item,
+      registros: [],
+      _colaboradores: {},
+      _colaboradorPrincipalChave: ""
+    };
+    return acumulador;
+  }, {});
+
+  for (let indice = 1; indice < dados.length; indice += 1) {
+    const linha = dados[indice];
+    const tfmLinha = String(linha[colunaTfm] || "").trim();
+
+    if (!tfmsBuscados.has(tfmLinha)) {
+      continue;
+    }
+
+    const resultado = resultados[tfmLinha];
+    const nomeLinha = colunaNome >= 0 ? linha[colunaNome] : "";
+    const matriculaLinha = colunaMatricula >= 0 ? linha[colunaMatricula] : "";
+    const horasLinha = colunaHoras >= 0 ? linha[colunaHoras] : "";
+    const chaveColaborador = registrarColaboradorResultado(
+      resultado,
+      nomeLinha,
+      matriculaLinha,
+      horasLinha,
+      colunaData >= 0 ? linha[colunaData] : ""
+    );
+
+    if (!resultado.encontrado) {
+      Object.assign(resultado, {
+        encontrado: true,
+        linhaEditando: indice + 1,
+        data: colunaData >= 0 ? linha[colunaData] : "",
+        turno: colunaTurno >= 0 ? linha[colunaTurno] : "",
+        nome: nomeLinha,
+        matricula: matriculaLinha,
+        projeto: colunaProjeto >= 0 ? linha[colunaProjeto] : "",
+        colaboradoresAdicionais: separarColaboradoresAdicionais(
+          colunaColaboradoresAdicionais >= 0 ? linha[colunaColaboradoresAdicionais] : "",
+          colunaHorasColaboradores >= 0 ? linha[colunaHorasColaboradores] : ""
+        ),
+        nomeDocumento: colunaNomePdf >= 0 ? linha[colunaNomePdf] : "",
+        urlDocumento: colunaLinkPdf >= 0 ? linha[colunaLinkPdf] : ""
+      });
+      resultado._colaboradorPrincipalChave = chaveColaborador;
+    }
+
+    if (chaveColaborador === resultado._colaboradorPrincipalChave) {
+      resultado.registros.push({
+        data: colunaData >= 0 ? linha[colunaData] : "",
+        atividade: colunaAtividade >= 0 ? linha[colunaAtividade] : "",
+        horas: horasLinha,
+        observacao: colunaObservacao >= 0 ? linha[colunaObservacao] : ""
+      });
+    }
+  }
+
+  Object.keys(resultados).forEach((tfm) => {
+    const resultado = resultados[tfm];
+    const datas = resultado.registros
+      .map((registro) => registro.data)
+      .filter(Boolean)
+      .sort((dataA, dataB) => new Date(dataA) - new Date(dataB));
+
+    if (datas.length) {
+      resultado.dataInicioTfm = datas[0];
+      resultado.dataFimTfm = datas[datas.length - 1];
+    }
+
+    const colaboradoresDasLinhas = Object.keys(resultado._colaboradores)
+      .filter((chave) => chave !== resultado._colaboradorPrincipalChave)
+      .map((chave) => resultado._colaboradores[chave])
+      .map((colaborador) => ({
+        nome: colaborador.nome,
+        matricula: colaborador.matricula,
+        horas: colaborador.horas,
+        lancamentos: colaborador.lancamentos
+      }));
+
+    if ((!resultado.colaboradoresAdicionais || !resultado.colaboradoresAdicionais.length) && colaboradoresDasLinhas.length) {
+      resultado.colaboradoresAdicionais = colaboradoresDasLinhas;
+    }
+
+    delete resultado._colaboradores;
+    delete resultado._colaboradorPrincipalChave;
+  });
+
+  return tfmsNormalizados.map((item) => resultados[item]);
+}
+
+function buscarResumoGeral() {
+  const aba = obterAbaPrincipal();
+  const dados = aba.getDataRange().getValues();
+  const cabecalhos = dados[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhos, ["Data"]);
+  const colunaTfm = obterIndiceCabecalho(cabecalhos, ["TFM", "Numero do TFM", "Número do TFM"]);
+  const colunaAtividade = obterIndiceCabecalho(cabecalhos, ["Atividade", "Atividade Realizada"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhos, ["Horas", "Horas Trabalhadas"]);
+
+  if (colunaTfm === -1 || colunaHoras === -1) {
+    throw new Error("Cabecalhos da planilha nao encontrados.");
+  }
+
+  const tfms = new Set();
+  let totalAtividades = 0;
+  let totalHoras = 0;
+
+  for (let indice = 1; indice < dados.length; indice += 1) {
+    const linha = dados[indice];
+    const tfm = String(linha[colunaTfm] || "").trim();
+    const atividade = colunaAtividade >= 0 ? String(linha[colunaAtividade] || "").trim() : "";
+    const horas = Number(String(linha[colunaHoras] || "0").replace(",", "."));
+
+    if (tfm) {
+      tfms.add(tfm);
+    }
+
+    if (atividade || horas > 0) {
+      totalAtividades += 1;
+    }
+
+    if (!Number.isNaN(horas)) {
+      totalHoras += horas;
+    }
+  }
+
+  return {
+    sucesso: true,
+    totalAtividades,
+    totalHoras,
+    totalTfms: tfms.size
+  };
+}
+
+function buscarGeralOficina() {
+  const aba = obterAbaPrincipal();
+  const dados = aba.getDataRange().getValues();
+  const cabecalhos = dados[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhos, ["Data"]);
+  const colunaTfm = obterIndiceCabecalho(cabecalhos, ["TFM", "Numero do TFM", "Número do TFM"]);
+  const colunaAtividade = obterIndiceCabecalho(cabecalhos, ["Atividade", "Atividade Realizada"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhos, ["Horas", "Horas Trabalhadas"]);
+
+  if (colunaTfm === -1 || colunaAtividade === -1 || colunaHoras === -1) {
+    throw new Error("Cabecalhos da planilha nao encontrados.");
+  }
+
+  const atividades = {};
+  const registros = [];
+
+  for (let indice = 1; indice < dados.length; indice += 1) {
+    const linha = dados[indice];
+    const data = colunaData >= 0 ? linha[colunaData] : "";
+    const atividade = String(linha[colunaAtividade] || "").trim() || "Atividade sem nome";
+    const tfm = String(linha[colunaTfm] || "").trim();
+    const horas = converterHorasNumero(linha[colunaHoras]);
+
+    if (!tfm && horas <= 0) {
+      continue;
+    }
+
+    if (!atividades[atividade]) {
+      atividades[atividade] = {
+        atividade,
+        horas: 0,
+        tfms: {}
+      };
+    }
+
+    atividades[atividade].horas += horas;
+
+    if (tfm) {
+      atividades[atividade].tfms[tfm] = true;
+    }
+
+    registros.push({
+      data,
+      atividade,
+      tfm,
+      horas: Number(horas.toFixed(2)),
+      emAndamento: false
+    });
+  }
+
+  obterRegistrosTfmsEmAndamento().forEach((registro) => {
+    registros.push(registro);
+
+    if (!atividades[registro.atividade]) {
+      atividades[registro.atividade] = {
+        atividade: registro.atividade,
+        horas: 0,
+        tfms: {}
+      };
+    }
+
+    atividades[registro.atividade].horas += registro.horas;
+    if (registro.tfm) {
+      atividades[registro.atividade].tfms[registro.tfm] = true;
+    }
+  });
+
+  return {
+    sucesso: true,
+    atividades: Object.keys(atividades)
+      .map((atividade) => ({
+        atividade,
+        horas: Number(atividades[atividade].horas.toFixed(2)),
+        tfms: Object.keys(atividades[atividade].tfms).length
+      }))
+      .sort((primeira, segunda) => segunda.horas - primeira.horas || segunda.tfms - primeira.tfms),
+    registros
+  };
+}
+
+function buscarHistoricoRecente(limite) {
+  const aba = obterAbaPrincipal();
+  const dados = aba.getDataRange().getValues();
+  const cabecalhos = dados[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhos, ["Data"]);
+  const colunaNome = obterIndiceCabecalho(cabecalhos, ["Nome", "Nome do Colaborador", "Colaborador"]);
+  const colunaTfm = obterIndiceCabecalho(cabecalhos, ["TFM", "Numero do TFM", "Número do TFM"]);
+  const colunaAtividade = obterIndiceCabecalho(cabecalhos, ["Atividade", "Atividade Realizada"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhos, ["Horas", "Horas Trabalhadas"]);
+
+  if (colunaTfm === -1 || colunaAtividade === -1) {
+    throw new Error("Cabecalhos da planilha nao encontrados.");
+  }
+
+  const quantidade = Math.min(Math.max(Number(limite) || 5, 1), 10);
+  const historico = [];
+
+  for (let indice = dados.length - 1; indice >= 1 && historico.length < quantidade; indice -= 1) {
+    const linha = dados[indice];
+    const tfm = String(linha[colunaTfm] || "").trim();
+    const atividade = colunaAtividade >= 0 ? String(linha[colunaAtividade] || "").trim() : "";
+
+    if (!tfm && !atividade) {
+      continue;
+    }
+
+    historico.push({
+      data: colunaData >= 0 ? linha[colunaData] : "",
+      nome: colunaNome >= 0 ? linha[colunaNome] : "",
+      tfm,
+      atividade,
+      horas: colunaHoras >= 0 ? linha[colunaHoras] : ""
+    });
+  }
+
+  return {
+    sucesso: true,
+    historico
+  };
+}
+
+function buscarDesempenhoColaborador(matricula) {
+  const matriculaBusca = String(matricula || "").trim();
+  const chaveCache = `desempenho:${matriculaBusca}`;
+  const cache = CacheService.getScriptCache();
+
+  try {
+    const respostaCache = cache.get(chaveCache);
+
+    if (respostaCache) {
+      return JSON.parse(respostaCache);
+    }
+  } catch (erro) {
+    console.warn(`Falha ao ler cache de desempenho: ${erro.message}`);
+  }
+
+  const aba = obterAbaPrincipal();
+  const dados = aba.getDataRange().getValues();
+  const cabecalhos = dados[0] || [];
+  const colunaData = obterIndiceCabecalho(cabecalhos, ["Data"]);
+  const colunaNome = obterIndiceCabecalho(cabecalhos, ["Nome", "Nome do Colaborador", "Colaborador"]);
+  const colunaMatricula = obterIndiceCabecalho(cabecalhos, ["Matricula", "Matrícula"]);
+  const colunaTfm = obterIndiceCabecalho(cabecalhos, ["TFM", "Numero do TFM", "Número do TFM"]);
+  const colunaAtividade = obterIndiceCabecalho(cabecalhos, ["Atividade", "Atividade Realizada"]);
+  const colunaHoras = obterIndiceCabecalho(cabecalhos, ["Horas", "Horas Trabalhadas"]);
+  const colunaObservacao = obterIndiceCabecalho(cabecalhos, ["Observacao", "Observação", "Observacao da atividade", "Observação da atividade"]);
+  const registros = [];
+
+  if (colunaMatricula === -1 || colunaAtividade === -1 || colunaHoras === -1) {
+    throw new Error("Cabecalhos da planilha nao encontrados.");
+  }
+
+  for (let indice = 1; indice < dados.length; indice += 1) {
+    const linha = dados[indice];
+    const matriculaLinha = String(linha[colunaMatricula] || "").trim();
+
+    if (matriculaLinha !== matriculaBusca) {
+      continue;
+    }
+
+    const atividade = String(linha[colunaAtividade] || "").trim();
+    const horas = colunaHoras >= 0 ? linha[colunaHoras] : "";
+
+    if (!atividade && converterHorasNumero(horas) <= 0) {
+      continue;
+    }
+
+    registros.push({
+      data: colunaData >= 0 ? linha[colunaData] : "",
+      nome: colunaNome >= 0 ? linha[colunaNome] : "",
+      matricula: matriculaLinha,
+      tfm: colunaTfm >= 0 ? linha[colunaTfm] : "",
+      atividade,
+      horas,
+      observacao: colunaObservacao >= 0 ? linha[colunaObservacao] : "",
+      emAndamento: false
+    });
+  }
+
+  registros.push(...obterRegistrosTfmsEmAndamento(matriculaBusca));
+
+  const resposta = {
+    sucesso: true,
+    registros
+  };
+
+  try {
+    const respostaSerializada = JSON.stringify(resposta);
+
+    if (respostaSerializada.length <= 90000) {
+      cache.put(chaveCache, respostaSerializada, 300);
+    }
+  } catch (erro) {
+    console.warn(`Falha ao salvar cache de desempenho: ${erro.message}`);
+  }
+
+  return resposta;
+}
+
+function invalidarCacheDesempenho(matriculas) {
+  const chaves = [...new Set((matriculas || [])
+    .map((matricula) => String(matricula || "").trim())
+    .filter(Boolean)
+    .map((matricula) => `desempenho:${matricula}`))];
+
+  if (chaves.length) {
+    CacheService.getScriptCache().removeAll(chaves);
+  }
+}
+
+function obterRegistrosTfmsEmAndamento(matricula) {
+  const matriculaBusca = String(matricula || "").trim();
+  const aba = obterAbaTfmsAbertos();
+  const dados = aba.getDataRange().getValues();
+  const registros = [];
+
+  for (let indice = 1; indice < dados.length; indice += 1) {
+    const linha = dados[indice];
+    const status = String(linha[0] || "").trim();
+    const matriculaColaborador = String(linha[8] || "").trim();
+    const horas = converterHorasNumero(linha[12]) + converterHorasNumero(linha[18]);
+
+    if (status !== "EM ANDAMENTO" || (matriculaBusca && matriculaColaborador !== matriculaBusca) || horas <= 0) {
+      continue;
+    }
+
+    registros.push({
+      data: linha[3] || linha[2] || "",
+      nome: linha[7] || "",
+      matricula: matriculaColaborador,
+      tfm: String(linha[1] || "").trim(),
+      atividade: String(linha[11] || linha[17] || "Atividade sem nome").trim(),
+      horas: Number(horas.toFixed(2)),
+      observacao: linha[13] || "",
+      emAndamento: true
+    });
+  }
+
+  return registros;
+}
+
+function obterIndiceCabecalho(cabecalhos, nomes) {
+  const nomesNormalizados = nomes.map(normalizarCabecalho);
+
+  return cabecalhos.findIndex((cabecalho) => nomesNormalizados.includes(normalizarCabecalho(cabecalho)));
+}
+
+function normalizarCabecalho(valor) {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function responderJson(conteudo) {
+  return ContentService
+    .createTextOutput(JSON.stringify(conteudo))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function obterAbaTfmsAbertos() {
+  const arquivo = obterArquivoPlanilha();
+  const aba = arquivo.getSheetByName(CONFIG.nomeAbaTfmsAbertos) || arquivo.insertSheet(CONFIG.nomeAbaTfmsAbertos);
+
+  if (aba.getLastRow() === 0) {
+    aba.getRange(1, 1, 1, CABECALHOS_TFMS_ABERTOS.length).setValues([CABECALHOS_TFMS_ABERTOS]);
+  } else {
+    garantirCabecalhos(aba, CABECALHOS_TFMS_ABERTOS);
+  }
+
+  return aba;
+}
+
+function criarLinhaTfmAberto(dados) {
+  return [
+    dados.status || "EM ANDAMENTO",
+    dados.tfm || "",
+    dados.dataInicial || "",
+    dados.dataTrabalhada || "",
+    dados.dataFinal || "",
+    dados.nomeHost || "",
+    dados.matriculaHost || "",
+    dados.nomeColaborador || "",
+    dados.matriculaColaborador || "",
+    dados.turno || "",
+    dados.projeto || "",
+    dados.atividade || "",
+    dados.horas || "",
+    dados.observacao || "",
+    new Date(),
+    dados.nomesDocumentos || "",
+    dados.linksDocumentos || "",
+    dados.atividadeAdicional || "",
+    dados.horasAdicionais || "",
+    dados.nomesAutorizados || "",
+    dados.matriculasAutorizadas || ""
+  ];
+}
+
+function abrirTfmEmAndamento(dados) {
+  try {
+    const aba = obterAbaTfmsAbertos();
+    const tfm = String(dados.tfm || "").trim();
+    const matriculaHost = String(dados.matriculaHost || "").trim();
+    const atividade = String(dados.atividade || "").trim();
+    const horas = converterHorasNumero(dados.horas);
+    const colaboradoresAutorizados = Array.isArray(dados.colaboradoresAutorizados)
+      ? dados.colaboradoresAutorizados.map((item) => ({
+        nome: String(item.nome || "").trim(),
+        matricula: String(item.matricula || "").trim()
+      })).filter((item, indice, lista) => (
+        item.nome
+        && item.matricula
+        && item.matricula !== matriculaHost
+        && lista.findIndex((outro) => outro.matricula === item.matricula) === indice
+      ))
+      : [];
+
+    if (!/^\d{6}$/.test(tfm) || !matriculaHost || !dados.nomeHost || !dados.dataInicial || !atividade || horas <= 0) {
+      throw new Error("Preencha TFM, data inicial, responsavel, atividade e horas antes de abrir.");
+    }
+
+    const principal = buscarDocumentoPorTfm(tfm);
+    if (principal && principal.encontrado) {
+      throw new Error("Este TFM ja esta fechado na planilha principal.");
+    }
+
+    if (localizarLinhasTfmAberto(aba, tfm, "EM ANDAMENTO").length) {
+      throw new Error("Este TFM ja esta em andamento.");
+    }
+
+    const documentos = enviarDocumentosPorEmail(dados);
+    const nomesDocumentos = documentos.map((documento) => documento.nome).join(" | ");
+    const linksDocumentos = [...new Set(documentos.map((documento) => documento.url).filter(Boolean))].join(" | ");
+    const nomesAutorizados = colaboradoresAutorizados.map((colaborador) => colaborador.nome).join(" | ");
+    const matriculasAutorizadas = colaboradoresAutorizados.map((colaborador) => colaborador.matricula).join(" | ");
+
+    const linhasAbertura = [criarLinhaTfmAberto({
+      status: "EM ANDAMENTO",
+      tfm,
+      dataInicial: dados.dataInicial,
+      dataTrabalhada: dados.dataInicial,
+      nomeHost: dados.nomeHost,
+      matriculaHost,
+      nomeColaborador: dados.nomeHost,
+      matriculaColaborador: matriculaHost,
+      turno: dados.turno,
+      projeto: dados.projeto,
+      atividade,
+      horas,
+      observacao: dados.observacao,
+      nomesDocumentos,
+      linksDocumentos,
+      nomesAutorizados,
+      matriculasAutorizadas
+    })];
+
+    aba.getRange(aba.getLastRow() + 1, 1, linhasAbertura.length, CABECALHOS_TFMS_ABERTOS.length).setValues(linhasAbertura);
+    invalidarCacheDesempenho([matriculaHost]);
+
+    return responderJson({ sucesso: true });
+  } catch (erro) {
+    return responderJson({ sucesso: false, erro: erro.message || "Erro ao registrar TFM." });
+  }
+}
+
+function adicionarHorasTfmAberto(dados) {
+  try {
+    const aba = obterAbaTfmsAbertos();
+    const tfm = String(dados.tfm || "").trim();
+    const matricula = String(dados.matriculaColaborador || "").trim();
+    const atividades = Array.isArray(dados.atividades)
+      ? dados.atividades.map((item) => ({
+        atividade: String(item.atividade || "").trim(),
+        horas: converterHorasNumero(item.horas),
+        observacao: String(item.observacao || "").trim()
+      })).filter((item) => item.atividade && item.horas > 0)
+      : [{
+        atividade: String(dados.atividade || "").trim(),
+        horas: converterHorasNumero(dados.horas),
+        observacao: String(dados.observacao || "").trim()
+      }].filter((item) => item.atividade && item.horas > 0);
+    const colaboradoresAdicionais = Array.isArray(dados.colaboradoresAdicionais)
+      ? dados.colaboradoresAdicionais.map((item) => ({
+        nome: String(item.nome || "").trim(),
+        matricula: String(item.matricula || "").trim(),
+        horas: converterHorasNumero(item.horas)
+      })).filter((item) => item.nome && item.matricula && item.horas > 0)
+      : [];
+    const linhasAbertas = localizarLinhasTfmAberto(aba, tfm, "EM ANDAMENTO");
+
+    if (!linhasAbertas.length) {
+      throw new Error("Este TFM nao esta mais em andamento.");
+    }
+
+    validarPermissaoGerenciamentoTfm(linhasAbertas, dados.matriculaHostEditor);
+
+    if (!dados.dataTrabalhada || !atividades.length) {
+      throw new Error("Informe ao menos uma atividade e as horas trabalhadas.");
+    }
+
+    const abertura = linhasAbertas[0].valores;
+    const linhasHost = atividades.map((atividade, indice) => criarLinhaTfmAberto({
+      status: "EM ANDAMENTO",
+      tfm,
+      dataInicial: abertura[2],
+      dataTrabalhada: dados.dataTrabalhada,
+      nomeHost: abertura[5],
+      matriculaHost: abertura[6],
+      nomeColaborador: dados.nomeColaborador,
+      matriculaColaborador: matricula,
+      turno: abertura[9],
+      projeto: abertura[10],
+      atividade: indice === 0 ? atividade.atividade : "",
+      atividadeAdicional: indice > 0 ? atividade.atividade : "",
+      horas: indice === 0 ? atividade.horas : "",
+      horasAdicionais: indice > 0 ? atividade.horas : "",
+      observacao: atividade.observacao,
+      nomesAutorizados: abertura[19],
+      matriculasAutorizadas: abertura[20]
+    }));
+    const atividadePrincipal = atividades[0];
+    const linhasColaboradores = colaboradoresAdicionais.map((colaborador) => criarLinhaTfmAberto({
+      status: "EM ANDAMENTO",
+      tfm,
+      dataInicial: abertura[2],
+      dataTrabalhada: dados.dataTrabalhada,
+      nomeHost: abertura[5],
+      matriculaHost: abertura[6],
+      nomeColaborador: colaborador.nome,
+      matriculaColaborador: colaborador.matricula,
+      turno: abertura[9],
+      projeto: abertura[10],
+      atividade: atividadePrincipal.atividade,
+      horas: colaborador.horas,
+      observacao: atividadePrincipal.observacao,
+      nomesAutorizados: abertura[19],
+      matriculasAutorizadas: abertura[20]
+    }));
+    const linhas = [...linhasHost, ...linhasColaboradores];
+    aba.getRange(aba.getLastRow() + 1, 1, linhas.length, CABECALHOS_TFMS_ABERTOS.length).setValues(linhas);
+    invalidarCacheDesempenho([matricula, ...colaboradoresAdicionais.map((colaborador) => colaborador.matricula)]);
+
+    return responderJson({ sucesso: true });
+  } catch (erro) {
+    return responderJson({ sucesso: false, erro: erro.message || "Erro ao adicionar horas." });
+  }
+}
+
+function localizarLinhasTfmAberto(aba, tfm, status) {
+  const dados = aba.getDataRange().getValues();
+  const encontrados = [];
+
+  for (let indice = 1; indice < dados.length; indice += 1) {
+    if (String(dados[indice][1] || "").trim() === tfm && (!status || String(dados[indice][0] || "").trim() === status)) {
+      encontrados.push({ numero: indice + 1, valores: dados[indice] });
+    }
+  }
+
+  return encontrados;
+}
+
+function obterMatriculasGerenciamentoTfm(linhas) {
+  const matriculas = new Set();
+
+  linhas.forEach((linha) => {
+    const matriculaHost = String(linha.valores[6] || "").trim();
+    if (matriculaHost) matriculas.add(matriculaHost);
+
+    String(linha.valores[20] || "").split("|").forEach((matricula) => {
+      const valor = matricula.trim();
+      if (valor) matriculas.add(valor);
+    });
+  });
+
+  return matriculas;
+}
+
+function validarPermissaoGerenciamentoTfm(linhas, matricula) {
+  const matriculaEditor = String(matricula || "").trim();
+
+  if (!matriculaEditor || !obterMatriculasGerenciamentoTfm(linhas).has(matriculaEditor)) {
+    throw new Error("Somente o host ou um colaborador autorizado pode gerenciar este TFM.");
+  }
+}
+
+function listarTfmsAbertos(matricula) {
+  const aba = obterAbaTfmsAbertos();
+  const dados = aba.getDataRange().getValues();
+  const agrupados = {};
+
+  for (let indice = 1; indice < dados.length; indice += 1) {
+    const linha = dados[indice];
+    const status = String(linha[0] || "").trim();
+    const tfm = String(linha[1] || "").trim();
+
+    if (status !== "EM ANDAMENTO" || !tfm) continue;
+
+    if (!agrupados[tfm]) {
+      agrupados[tfm] = {
+        tfm,
+        status,
+        dataInicial: linha[2],
+        nomeHost: linha[5],
+        matriculaHost: String(linha[6] || ""),
+        turno: linha[9],
+        projeto: linha[10],
+        atividade: linha[11],
+        horasTotal: 0,
+        minhasHoras: 0,
+        ultimoLancamento: "",
+        lancamentos: 0,
+        podeGerenciar: false
+      };
+    }
+
+    const horas = converterHorasNumero(linha[12]) + converterHorasNumero(linha[18]);
+    agrupados[tfm].horasTotal += horas;
+    agrupados[tfm].lancamentos += horas > 0 ? 1 : 0;
+    if (String(linha[8] || "").trim() === matricula) agrupados[tfm].minhasHoras += horas;
+    if (linha[3] && (!agrupados[tfm].ultimoLancamento || new Date(linha[3]) > new Date(agrupados[tfm].ultimoLancamento))) {
+      agrupados[tfm].ultimoLancamento = linha[3];
+    }
+    if (String(linha[6] || "").trim() === matricula || String(linha[20] || "").split("|").some((item) => item.trim() === matricula)) {
+      agrupados[tfm].podeGerenciar = true;
+    }
+  }
+
+  return Object.keys(agrupados).map((tfm) => agrupados[tfm]).sort((a, b) => new Date(b.dataInicial) - new Date(a.dataInicial));
+}
+
+function tfmEstaEmAndamento(tfm) {
+  const numeroTfm = String(tfm || "").trim();
+  if (!numeroTfm) return false;
+
+  const dados = obterAbaTfmsAbertos().getDataRange().getValues();
+  return dados.slice(1).some((linha) => (
+    String(linha[0] || "").trim() === "EM ANDAMENTO"
+    && String(linha[1] || "").trim() === numeroTfm
+  ));
+}
+
+function detalharTfmAberto(tfm, matriculaHost) {
+  const aba = obterAbaTfmsAbertos();
+  const linhas = localizarLinhasTfmAberto(aba, tfm, "EM ANDAMENTO");
+
+  if (!linhas.length) {
+    throw new Error("Este TFM nao esta mais em andamento.");
+  }
+
+  validarPermissaoGerenciamentoTfm(linhas, matriculaHost);
+
+  return {
+    sucesso: true,
+    tfm,
+    dataInicial: linhas[0].valores[2],
+    projeto: linhas[0].valores[10],
+    registros: linhas
+      .filter((linha) => converterHorasNumero(linha.valores[12]) > 0 || converterHorasNumero(linha.valores[18]) > 0)
+      .map((linha) => ({
+        linha: linha.numero,
+        colunaHoras: converterHorasNumero(linha.valores[12]) > 0 ? 13 : 19,
+        data: linha.valores[3],
+        nome: linha.valores[7],
+        matricula: linha.valores[8],
+        atividade: linha.valores[11],
+        horas: linha.valores[12],
+        atividadeAdicional: linha.valores[17],
+        horasAdicionais: linha.valores[18],
+        observacao: linha.valores[13]
+      }))
+  };
+}
+
+function editarLancamentosTfmAberto(dados) {
+  try {
+    const aba = obterAbaTfmsAbertos();
+    const tfm = String(dados.tfm || "").trim();
+    const matriculaHost = String(dados.matriculaHost || "").trim();
+    const lancamentos = Array.isArray(dados.registros) ? dados.registros : [];
+    const linhasAbertas = localizarLinhasTfmAberto(aba, tfm, "EM ANDAMENTO");
+
+    if (!linhasAbertas.length) throw new Error("Este TFM nao esta mais em andamento.");
+    validarPermissaoGerenciamentoTfm(linhasAbertas, matriculaHost);
+    if (!lancamentos.length) throw new Error("Nenhum lancamento foi informado para edicao.");
+
+    const linhasPermitidas = new Set(linhasAbertas.map((linha) => linha.numero));
+    const matriculasAfetadas = [];
+    lancamentos.forEach((lancamento) => {
+      const numeroLinha = Number(lancamento.linha);
+      const colunaHoras = Number(lancamento.colunaHoras);
+      const data = String(lancamento.data || "").trim();
+      const horas = converterHorasNumero(lancamento.horas);
+
+      if (!linhasPermitidas.has(numeroLinha)) throw new Error("Um dos lancamentos nao pertence a este TFM.");
+      if (colunaHoras !== 13 && colunaHoras !== 19) throw new Error("Nao foi possivel identificar as horas do lancamento.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || horas <= 0) {
+        throw new Error("Informe uma data valida e horas maiores que zero.");
+      }
+
+      aba.getRange(numeroLinha, 4).setValue(data);
+      aba.getRange(numeroLinha, colunaHoras).setValue(horas);
+      aba.getRange(numeroLinha, 14).setValue(String(lancamento.observacao || "").trim());
+      matriculasAfetadas.push(aba.getRange(numeroLinha, 9).getValue());
+    });
+
+    const dataInicial = linhasAbertas
+      .map((linha) => aba.getRange(linha.numero, 4).getValue())
+      .map((valor) => {
+        if (Object.prototype.toString.call(valor) === "[object Date]") return valor;
+        const texto = String(valor || "").trim();
+        const correspondencia = texto.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        return correspondencia ? new Date(Number(correspondencia[1]), Number(correspondencia[2]) - 1, Number(correspondencia[3])) : null;
+      })
+      .filter((data) => data && !Number.isNaN(data.getTime()))
+      .sort((dataA, dataB) => dataA.getTime() - dataB.getTime())[0];
+
+    if (dataInicial) {
+      linhasAbertas.forEach((linha) => aba.getRange(linha.numero, 3).setValue(dataInicial));
+    }
+
+    invalidarCacheDesempenho(matriculasAfetadas);
+    return responderJson({ sucesso: true });
+  } catch (erro) {
+    return responderJson({ sucesso: false, erro: erro.message || "Erro ao editar lancamentos." });
+  }
+}
+
+function excluirLancamentoTfmAberto(dados) {
+  const bloqueio = LockService.getScriptLock();
+
+  try {
+    bloqueio.waitLock(30000);
+    const aba = obterAbaTfmsAbertos();
+    const tfm = String(dados.tfm || "").trim();
+    const matriculaHost = String(dados.matriculaHost || "").trim();
+    const numeroLinha = Number(dados.linha);
+    const linhasAbertas = localizarLinhasTfmAberto(aba, tfm, "EM ANDAMENTO");
+
+    if (!linhasAbertas.length) throw new Error("Este TFM nao esta mais em andamento.");
+    validarPermissaoGerenciamentoTfm(linhasAbertas, matriculaHost);
+    if (linhasAbertas.length === 1) {
+      throw new Error("O ultimo lancamento mantem o TFM aberto e nao pode ser excluido. Cancele o TFM se ele foi criado por engano.");
+    }
+
+    const linhaExcluir = linhasAbertas.find((linha) => linha.numero === numeroLinha);
+    if (!linhaExcluir) throw new Error("Este lancamento nao pertence ao TFM informado.");
+
+    const matriculaAfetada = linhaExcluir.valores[8];
+    aba.deleteRow(numeroLinha);
+    invalidarCacheDesempenho([matriculaAfetada]);
+
+    return responderJson({ sucesso: true });
+  } catch (erro) {
+    return responderJson({ sucesso: false, erro: erro.message || "Erro ao excluir lancamento." });
+  } finally {
+    bloqueio.releaseLock();
+  }
+}
+
+function cancelarTfmAberto(dados) {
+  const bloqueio = LockService.getScriptLock();
+
+  try {
+    bloqueio.waitLock(30000);
+    const aba = obterAbaTfmsAbertos();
+    const tfm = String(dados.tfm || "").trim();
+    const matriculaHost = String(dados.matriculaHost || "").trim();
+    const linhasAbertas = localizarLinhasTfmAberto(aba, tfm, "EM ANDAMENTO");
+
+    if (!linhasAbertas.length) throw new Error("Este TFM nao esta mais em andamento.");
+    validarPermissaoGerenciamentoTfm(linhasAbertas, matriculaHost);
+
+    const matriculasAfetadas = linhasAbertas.map((linha) => linha.valores[8]);
+    linhasAbertas.sort((linhaA, linhaB) => linhaB.numero - linhaA.numero).forEach((linha) => {
+      aba.deleteRow(linha.numero);
+    });
+    invalidarCacheDesempenho(matriculasAfetadas);
+
+    return responderJson({ sucesso: true });
+  } catch (erro) {
+    return responderJson({ sucesso: false, erro: erro.message || "Erro ao cancelar TFM." });
+  } finally {
+    bloqueio.releaseLock();
+  }
+}
+
+function fecharTfmAberto(dados) {
+  const bloqueio = LockService.getScriptLock();
+
+  try {
+    bloqueio.waitLock(30000);
+    const abaAbertos = obterAbaTfmsAbertos();
+    const tfm = String(dados.tfm || "").trim();
+    const matriculaHost = String(dados.matriculaHost || "").trim();
+    const linhasAbertas = localizarLinhasTfmAberto(abaAbertos, tfm, "EM ANDAMENTO");
+
+    if (!linhasAbertas.length) throw new Error("Este TFM nao esta mais em andamento.");
+    validarPermissaoGerenciamentoTfm(linhasAbertas, matriculaHost);
+
+    const lancamentos = linhasAbertas.filter((linha) => (
+      converterHorasNumero(linha.valores[12]) > 0 || converterHorasNumero(linha.valores[18]) > 0
+    ));
+    if (!lancamentos.length) throw new Error("Adicione ao menos um lancamento de horas antes de fechar.");
+
+    const planilha = obterAbaPrincipal();
+    const cabecalhos = planilha.getRange(1, 1, 1, planilha.getLastColumn()).getValues()[0];
+    const linhasPrincipais = lancamentos.map((linha) => criarLinhaApontamento(cabecalhos, {
+      data: linha.valores[3],
+      nome: linha.valores[7],
+      matricula: linha.valores[8],
+      turno: linha.valores[9],
+      tfm: linha.valores[1],
+      projeto: linha.valores[10],
+      atividade: linha.valores[11] || linha.valores[17] || "",
+      horas: linha.valores[12] || linha.valores[18] || "",
+      observacao: linha.valores[13],
+      colaboradoresAdicionais: "",
+      horasColaboradores: "",
+      nomesDocumentos: "",
+      linksDocumentos: ""
+    }));
+
+    planilha.getRange(planilha.getLastRow() + 1, 1, linhasPrincipais.length, cabecalhos.length).setValues(linhasPrincipais);
+    const dataFinal = dados.dataFinal || new Date();
+    linhasAbertas.forEach((linha) => {
+      abaAbertos.getRange(linha.numero, 1).setValue("FECHADO");
+      abaAbertos.getRange(linha.numero, 5).setValue(dataFinal);
+    });
+    invalidarCacheDesempenho(lancamentos.map((linha) => linha.valores[8]));
+
+    return responderJson({ sucesso: true, linhasTransferidas: linhasPrincipais.length });
+  } catch (erro) {
+    return responderJson({ sucesso: false, erro: erro.message || "Erro ao fechar TFM." });
+  } finally {
+    bloqueio.releaseLock();
+  }
+}

@@ -1,0 +1,9 @@
+{
+    "name": "Registro de Atividades TFM",
+    "short_name": "Registro TFM",
+    "description": "Registro de atividades realizadas após a finalização do TFM.",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#f8fafc",
+    "theme_color": "#001E62"
+}
